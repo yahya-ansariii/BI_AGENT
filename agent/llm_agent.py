@@ -7,6 +7,7 @@ import subprocess
 import json
 import os
 import sys
+import pandas as pd
 from typing import Optional, Dict, Any, List
 from datetime import datetime
 from pathlib import Path
