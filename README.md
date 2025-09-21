@@ -8,12 +8,15 @@ BI Agent is a comprehensive, offline-first business intelligence tool that helps
 
 - **🔒 100% Offline Operation** - Your data never leaves your computer
 - **🤖 AI-Powered Analysis** - Local AI models for intelligent data insights
-- **📊 Advanced Visualizations** - Interactive charts and graphs
-- **🔗 Relationship Builder** - Create and visualize data relationships
-- **📄 Professional Reports** - Export insights as PDF, Word, or Excel
-- **🛠️ Custom SQL** - Write and execute custom SQL queries
+- **📊 Advanced Visualizations** - Interactive charts and graphs with auto-generation
+- **🔗 Smart Relationship Builder** - AI-powered relationship detection with manual editing
+- **📄 Professional PDF Reports** - Beautiful, formatted documents with enhanced styling
+- **🛠️ Custom SQL** - Write and execute custom SQL queries with auto-visualization
 - **📁 Multi-Format Support** - Excel, CSV, and custom table creation
-- **🎨 Modern UI** - Clean, intuitive interface
+- **🎨 Modern UI** - Clean, intuitive interface with tab navigation
+- **🔍 Search & Filter** - Find relationships and insights quickly
+- **📤 Bulk Export** - Export all insights or individual reports
+- **⚙️ Comprehensive Settings** - Configure AI models and data connectors
 
 ## 🚀 Quick Start
 
@@ -62,31 +65,62 @@ The setup script will automatically:
 - **Statistics**: Comprehensive data summaries and quality metrics
 - **Visualizations**: Automatic chart generation
 
-### 3. Relationship Building
-- **Define Relationships**: Connect tables using foreign keys
+### 3. Smart Relationship Building
+- **AI Detection**: Automatically detect relationships using AI analysis
+- **Manual Editing**: Edit, delete, and modify detected relationships
+- **Search & Filter**: Find specific relationships quickly
+- **Bulk Operations**: Export, import, and manage relationships in bulk
 - **ER Diagrams**: Beautiful visual representation of data relationships
-- **Validation**: Ensure data integrity and proper relationships
+- **Visual Indicators**: Distinguish between AI-detected and manual relationships
 
 ### 4. AI Analysis
 - **Natural Language Queries**: Ask questions in plain English
 - **SQL Generation**: AI converts questions to SQL queries
-- **Custom SQL**: Write and execute your own SQL queries
+- **Custom SQL**: Write and execute your own SQL queries with auto-visualization
 - **Enhanced Insights**: AI analyzes both query results and source data
+- **Query History**: Track and re-run previous queries
+- **Real-time Visualization**: Automatic chart generation for query results
 
-### 5. Report Generation
-- **PDF Reports**: Professional, formatted documents
+### 5. Professional Report Generation
+- **Individual PDF Export**: Export current analysis with enhanced styling
+- **Bulk PDF Export**: Export all insights in a comprehensive document
+- **Professional Styling**: Beautiful typography, colors, and layout
+- **Smart Formatting**: Automatic parsing of headings, lists, and code blocks
+- **Metadata Tables**: Professional information display
 - **Word Documents**: Microsoft Word compatible exports
 - **Excel Reports**: Structured data with multiple sheets
-- **Bulk Export**: Export all insights at once
+
+## 🆕 Recent Improvements
+
+### Enhanced User Experience
+- **Professional PDF Styling**: Beautiful reports with improved typography and colors
+- **Smart Relationship Detection**: AI automatically detects table relationships
+- **Advanced Relationship Management**: Edit, search, filter, and bulk operations
+- **Improved Navigation**: Better tab switching and user guidance
+- **Enhanced Error Handling**: Comprehensive error messages and recovery
+
+### New Features
+- **Auto-Visualization**: Automatic chart generation for SQL query results
+- **Query History**: Track and re-run previous queries
+- **Bulk Export**: Export all insights in a single comprehensive PDF
+- **Search & Filter**: Find relationships and insights quickly
+- **Settings Management**: Comprehensive configuration options
+- **Session State Management**: Improved data persistence and state handling
+
+### Technical Improvements
+- **Robust JSON Parsing**: Better handling of AI responses
+- **Enhanced Error Recovery**: Graceful handling of edge cases
+- **Improved Code Organization**: Better structure and maintainability
+- **Performance Optimizations**: Faster processing and better responsiveness
 
 ## 🛠️ Technical Details
 
 ### Architecture
-- **Frontend**: Streamlit web interface
+- **Frontend**: Streamlit web interface with enhanced UI components
 - **Data Processing**: Pandas + DuckDB for SQL queries
-- **AI Engine**: Ollama with local LLM models
-- **Visualization**: Plotly + Matplotlib + Seaborn
-- **Export**: ReportLab (PDF) + python-docx (Word)
+- **AI Engine**: Ollama with local LLM models and robust parsing
+- **Visualization**: Plotly + Matplotlib + Seaborn with auto-generation
+- **Export**: ReportLab (PDF) + python-docx (Word) with professional styling
 
 ### Supported AI Models
 - Llama 3.2 (3B, 8B)

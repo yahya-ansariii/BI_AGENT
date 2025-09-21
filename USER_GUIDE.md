@@ -11,7 +11,7 @@
 
 ### Using the Application
 
-The application has 5 main tabs at the top:
+The application has 6 main tabs at the top:
 
 ## 📁 Data Load Tab
 
@@ -52,14 +52,26 @@ The application has 5 main tabs at the top:
 
 ## 🔗 Relationship Builder Tab
 
-**Purpose**: Connect different data tables together
+**Purpose**: Connect different data tables together with AI assistance
 
 **What to do**:
-1. Choose a source table and target table
-2. Select which columns to connect
-3. Choose the relationship type
-4. Click "Add Relationship"
-5. See a visual diagram of your connections
+1. **AI Detection**: Click "🤖 Auto-Detect Relationships" to let AI find connections automatically
+2. **Manual Addition**: Click "Add Relationship" to create connections manually
+3. **Edit Relationships**: Click the ✏️ button to modify existing relationships
+4. **Search & Filter**: Use the search box to find specific relationships
+5. **Bulk Operations**: Export, import, or clear all relationships
+
+**AI Detection Features**:
+- **Automatic Analysis**: AI analyzes table structures and column names
+- **Smart Suggestions**: Finds potential foreign key relationships
+- **Visual Indicators**: AI-detected relationships are highlighted in green
+- **Stop Detection**: Click "⏹️ Stop Detection" to cancel the process
+
+**Relationship Management**:
+- **Edit**: Modify source/target tables, columns, and relationship types
+- **Delete**: Remove relationships you don't need
+- **Search**: Find relationships by table or column names
+- **Export/Import**: Save and load relationship configurations
 
 **Relationship Types**:
 - **One-to-One**: Each record in one table matches one record in another
@@ -68,9 +80,10 @@ The application has 5 main tabs at the top:
 - **Many-to-Many**: Records can have multiple matches
 
 **Tips**:
+- Start with AI detection for quick setup
 - Connect tables with similar data (like customer IDs)
 - The diagram helps you understand your data structure
-- You can delete relationships by clicking the trash icon
+- Use search to find specific relationships quickly
 
 ## 🤖 AI Analysis Tab
 
@@ -79,9 +92,10 @@ The application has 5 main tabs at the top:
 **What to do**:
 1. Make sure an AI model is selected and initialized
 2. Type your question in the text box
-3. Click "Generate AI Analysis"
-4. Read the AI's response
-5. Export your analysis as a report
+3. Click "Generate AI Analysis" to create SQL and get results
+4. Click "📊 Generate Visualization" to create charts
+5. Click "🤖✨ Generate AI Insights" for detailed analysis
+6. Export your analysis as professional PDF reports
 
 **Example Questions**:
 - "What are my top 5 products by sales?"
@@ -90,11 +104,42 @@ The application has 5 main tabs at the top:
 - "What patterns do you see in my data?"
 - "Create a summary of my business performance"
 
+**New Features**:
+- **Auto-Visualization**: Automatic chart generation for query results
+- **Professional PDF Export**: Beautiful, formatted reports
+- **Individual & Bulk Export**: Export current analysis or all insights
+- **Query History**: Track and re-run previous queries
+- **Enhanced Insights**: AI analyzes both query results and source data
+- **Real-time Processing**: See progress and results as they're generated
+
+**Export Options**:
+- **📄 Export Current as PDF**: Export the current analysis
+- **📊 Export All Insights as PDF**: Export all insights in one document
+- **🗑️ Clear Current Analysis**: Start fresh analysis
+
+## 🛠️ Custom Queries Tab
+
+**Purpose**: Write and execute custom SQL queries with auto-visualization
+
+**What to do**:
+1. Write your SQL query in the editor
+2. Click "▶️ Execute Query" to run the query
+3. View results in the table below
+4. Automatic visualization will be generated
+5. Export results or visualizations as needed
+
 **Features**:
-- **Quick Insights**: Get instant analysis of your data
-- **Analysis History**: See all your previous questions and answers
-- **Export Reports**: Download your analysis as JSON or Markdown files
-- **Multiple Formats**: Get insights in different formats
+- **SQL Editor**: Write custom SQL queries with syntax highlighting
+- **Auto-Visualization**: Automatic chart generation based on query results
+- **Query Results**: View data in an interactive table
+- **Export Options**: Save results and visualizations
+- **Error Handling**: Clear error messages for debugging
+
+**Tips**:
+- Use table names from your loaded data
+- Check the Relationships tab to understand table connections
+- Start with simple SELECT statements
+- Use the AI Analysis tab for help with complex queries
 
 ## ⚙️ Settings Tab
 

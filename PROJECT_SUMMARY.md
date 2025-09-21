@@ -18,18 +18,32 @@ A **modern, user-friendly business intelligence tool** that transforms Excel dat
 - **Multiple file formats** - Excel, CSV, OpenDocument support
 - **Sample data** - Try the app with built-in examples
 
-### 🔗 Relationship Builder
-- **Visual relationship creation** between tables
+### 🔗 Smart Relationship Builder
+- **AI-powered relationship detection** - Automatically find table connections
+- **Visual relationship creation** between tables with manual editing
 - **ER diagram generation** showing table connections
 - **Multiple relationship types** (One-to-One, One-to-Many, etc.)
 - **Interactive diagram** with NetworkX visualization
+- **Search and filter** relationships by table or column names
+- **Bulk operations** - Export, import, and clear all relationships
+- **Visual indicators** - Distinguish AI-detected vs manual relationships
 
 ### 🤖 AI-Powered Analysis
 - **Natural language queries** - Ask questions in plain English
 - **Multiple AI models** - Choose from available Ollama models
-- **Improved error handling** - Better timeout and connection management
-- **Analysis history** - Track all your questions and answers
-- **Export capabilities** - Download insights as reports
+- **Auto-visualization** - Automatic chart generation for query results
+- **Professional PDF export** - Beautiful, formatted reports with enhanced styling
+- **Individual & bulk export** - Export current analysis or all insights
+- **Query history** - Track and re-run previous queries
+- **Enhanced error handling** - Better timeout and connection management
+- **Real-time processing** - See progress and results as they're generated
+
+### 🛠️ Custom SQL Queries
+- **SQL editor** - Write custom SQL queries with syntax highlighting
+- **Auto-visualization** - Automatic chart generation based on query results
+- **Query results** - View data in an interactive table
+- **Export options** - Save results and visualizations
+- **Error handling** - Clear error messages for debugging
 
 ### 🔒 Complete Offline Operation
 - **100% private** - No data leaves your computer
@@ -45,6 +59,11 @@ A **modern, user-friendly business intelligence tool** that transforms Excel dat
 - ✅ **Deprecated parameters** - Updated `use_container_width` to `width`
 - ✅ **Multi-sheet loading** - Support for all Excel sheets
 - ✅ **Column selection** - Interface for choosing analysis columns
+- ✅ **AI relationship detection** - Robust JSON parsing with fallback mechanisms
+- ✅ **PDF styling** - Professional typography, colors, and layout
+- ✅ **Session state management** - Improved data persistence and state handling
+- ✅ **Navigation system** - Better tab switching and user guidance
+- ✅ **Error handling** - Comprehensive error messages and recovery
 
 ### Code Cleanup
 - ✅ **Removed duplicate files** - Cleaned up agent/, app/, config.py, run.py, setup.py
