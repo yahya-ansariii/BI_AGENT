@@ -348,6 +348,28 @@ def multiple_sources_tab():
 def main():
     """Main application function"""
     
+    # Initialize session state
+    if 'llm_agent' not in st.session_state:
+        st.session_state.llm_agent = LLMAgent()
+    
+    if 'insights_generator' not in st.session_state:
+        st.session_state.insights_generator = InsightsGenerator()
+    
+    if 'sql_generator' not in st.session_state:
+        st.session_state.sql_generator = SQLGenerator()
+    
+    if 'excel_connector' not in st.session_state:
+        st.session_state.excel_connector = ExcelConnector()
+    
+    if 'schema' not in st.session_state:
+        st.session_state.schema = None
+    
+    if 'relationships' not in st.session_state:
+        st.session_state.relationships = {}
+    
+    if 'uploaded_files' not in st.session_state:
+        st.session_state.uploaded_files = []
+    
     st.title("📊 Business Insights Agent")
     st.markdown("---")
     
