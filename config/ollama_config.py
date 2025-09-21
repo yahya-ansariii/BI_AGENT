@@ -169,6 +169,7 @@ class OllamaConfig:
             list: Available model names
         """
         try:
+            # First try to get models from Ollama command
             import subprocess
             result = subprocess.run(
                 [self.ollama_executable, "list"],
@@ -184,10 +185,27 @@ class OllamaConfig:
                         model_name = line.split()[0]
                         models.append(model_name)
                 return models
-            return []
-            
         except Exception:
-            return []
+            pass
+        
+        # Fallback: Check file system for models
+        try:
+            model_path = self.get_model_path()
+            if os.path.exists(model_path):
+                models = []
+                for item in os.listdir(model_path):
+                    item_path = os.path.join(model_path, item)
+                    if os.path.isdir(item_path):
+                        # Check if it looks like a model directory
+                        if any(f.endswith('.bin') or f.endswith('.gguf') or f.endswith('.safetensors') 
+                               for f in os.listdir(item_path)):
+                            models.append(item)
+                return models
+        except Exception:
+            pass
+        
+        # Final fallback: return empty list
+        return []
 
 # Global configuration instance
 ollama_config = OllamaConfig()

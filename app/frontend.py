@@ -138,7 +138,7 @@ def excel_data_source_tab():
                         for sheet_name, columns in schema.items():
                             st.write(f"**{sheet_name}**:")
                             col_df = pd.DataFrame(columns)
-                            st.dataframe(col_df, use_container_width=True)
+                            st.dataframe(col_df, width='stretch')
                     else:
                         st.error("Failed to read schema")
                 except Exception as e:
@@ -259,7 +259,7 @@ def ga_data_source_tab():
                             traffic_data = ga_conn.get_website_traffic(start_str, end_str)
                             if not traffic_data.empty:
                                 st.success(f"Fetched {len(traffic_data)} traffic records")
-                                st.dataframe(traffic_data.head(), use_container_width=True)
+                                st.dataframe(traffic_data.head(), width='stretch')
                 except Exception as e:
                     st.error(f"Error fetching data: {str(e)}")
         else:
@@ -309,7 +309,7 @@ def oncore_data_source_tab():
                         protocols = oncore_conn.get_protocols(limit=100)
                         if not protocols.empty:
                             st.success(f"Exported {len(protocols)} protocols")
-                            st.dataframe(protocols.head(), use_container_width=True)
+                            st.dataframe(protocols.head(), width='stretch')
                 except Exception as e:
                     st.error(f"Error exporting data: {str(e)}")
         else:
@@ -563,7 +563,7 @@ def main():
             for table_name, columns in st.session_state.schema.items():
                 with st.expander(f"Table: {table_name}"):
                     col_df = pd.DataFrame(columns)
-                    st.dataframe(col_df, use_container_width=True)
+                    st.dataframe(col_df, width='stretch')
             
             # Schema relationships section
             st.subheader("Define Relationships")
@@ -753,7 +753,7 @@ def main():
                                 return
                             
                             if result_df is not None and not result_df.empty:
-                                st.dataframe(result_df, use_container_width=True)
+                                st.dataframe(result_df, width='stretch')
                                 
                                 # Generate insights from both models
                                 st.subheader("AI Insights Comparison")
@@ -839,7 +839,7 @@ def main():
                                         fig = None
                                 
                                 if fig:
-                                    st.plotly_chart(fig, use_container_width=True)
+                                    st.plotly_chart(fig, width='stretch')
                                 
                             else:
                                 st.warning("No results returned from query")

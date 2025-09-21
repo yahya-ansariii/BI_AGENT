@@ -228,77 +228,162 @@ class ExcelConnector:
         
         return validation
     
-    def get_schema(self, file_path: str) -> Dict[str, Any]:
+    def get_schema(self, file_input) -> Dict[str, Any]:
         """
         Get schema information from Excel file
         
         Args:
-            file_path: Path to Excel file
+            file_input: Path to Excel file or Streamlit UploadedFile object
             
         Returns:
             Dictionary with table names and columns
         """
         try:
-            file_path = Path(file_path)
-            if not file_path.exists():
-                raise FileNotFoundError(f"File not found: {file_path}")
-            
-            # Get all sheet names
-            sheet_names = self.get_sheet_names(str(file_path))
-            schema = {}
-            
-            for sheet_name in sheet_names:
-                # Read sheet to get column information
-                df = self.read_sheet(str(file_path), sheet_name)
+            # Handle Streamlit UploadedFile objects
+            if hasattr(file_input, 'read'):
+                # This is a Streamlit UploadedFile object
+                file_input.seek(0)  # Reset file pointer
+                file_data = file_input.read()
                 
-                # Get column information
-                columns = []
-                for col in df.columns:
-                    columns.append({
-                        'name': col,
-                        'type': str(df[col].dtype),
-                        'nullable': df[col].isnull().any()
-                    })
+                # Create a temporary file-like object
+                import tempfile
+                import os
                 
-                schema[sheet_name] = columns
+                # Create temporary file
+                with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp_file:
+                    tmp_file.write(file_data)
+                    tmp_file_path = tmp_file.name
+                
+                try:
+                    # Get all sheet names
+                    sheet_names = self.get_sheet_names(tmp_file_path)
+                    schema = {}
+                    
+                    for sheet_name in sheet_names:
+                        # Read sheet to get column information
+                        df = self.read_sheet(tmp_file_path, sheet_name)
+                        
+                        # Get column information
+                        columns = []
+                        for col in df.columns:
+                            columns.append({
+                                'name': col,
+                                'type': str(df[col].dtype),
+                                'nullable': df[col].isnull().any()
+                            })
+                        
+                        schema[sheet_name] = columns
+                    
+                    return schema
+                    
+                finally:
+                    # Clean up temporary file
+                    if os.path.exists(tmp_file_path):
+                        os.unlink(tmp_file_path)
             
-            return schema
+            else:
+                # This is a regular file path
+                file_path = Path(file_input)
+                if not file_path.exists():
+                    raise FileNotFoundError(f"File not found: {file_path}")
+                
+                # Get all sheet names
+                sheet_names = self.get_sheet_names(str(file_path))
+                schema = {}
+                
+                for sheet_name in sheet_names:
+                    # Read sheet to get column information
+                    df = self.read_sheet(str(file_path), sheet_name)
+                    
+                    # Get column information
+                    columns = []
+                    for col in df.columns:
+                        columns.append({
+                            'name': col,
+                            'type': str(df[col].dtype),
+                            'nullable': df[col].isnull().any()
+                        })
+                    
+                    schema[sheet_name] = columns
+                
+                return schema
             
         except Exception as e:
             print(f"Error getting schema: {str(e)}")
             return {}
     
-    def run_query(self, file_path: str, sql: str) -> pd.DataFrame:
+    def run_query(self, file_input, sql: str) -> pd.DataFrame:
         """
         Run SQL query on Excel file using DuckDB
         
         Args:
-            file_path: Path to Excel file
+            file_input: Path to Excel file or Streamlit UploadedFile object
             sql: SQL query string
             
         Returns:
             DataFrame with query results
         """
         try:
-            file_path = Path(file_path)
-            if not file_path.exists():
-                raise FileNotFoundError(f"File not found: {file_path}")
+            # Handle Streamlit UploadedFile objects
+            if hasattr(file_input, 'read'):
+                # This is a Streamlit UploadedFile object
+                file_input.seek(0)  # Reset file pointer
+                file_data = file_input.read()
+                
+                # Create a temporary file-like object
+                import tempfile
+                import os
+                
+                # Create temporary file
+                with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp_file:
+                    tmp_file.write(file_data)
+                    tmp_file_path = tmp_file.name
+                
+                try:
+                    # Read all sheets and register with DuckDB
+                    all_sheets = self.read_all_sheets(tmp_file_path)
+                    
+                    # Clear existing tables
+                    self.conn.execute("DROP TABLE IF EXISTS sales")
+                    self.conn.execute("DROP TABLE IF EXISTS web_traffic")
+                    
+                    # Register each sheet as a table
+                    for sheet_name, df in all_sheets.items():
+                        table_name = sheet_name.lower().replace(' ', '_')
+                        self.conn.register(table_name, df)
+                    
+                    # Execute SQL query
+                    result = self.conn.execute(sql).fetchdf()
+                    
+                    return result
+                    
+                finally:
+                    # Clean up temporary file
+                    if os.path.exists(tmp_file_path):
+                        os.unlink(tmp_file_path)
             
-            # Read all sheets and register with DuckDB
-            all_sheets = self.read_all_sheets(str(file_path))
-            
-            # Clear existing tables
-            self.conn.execute("DROP TABLE IF EXISTS sales")
-            self.conn.execute("DROP TABLE IF EXISTS web_traffic")
-            
-            # Register each sheet as a table
-            for sheet_name, df in all_sheets.items():
-                table_name = sheet_name.lower().replace(' ', '_')
-                self.conn.register(table_name, df)
-            
-            # Execute SQL query
-            result = self.conn.execute(sql).fetchdf()
-            return result
+            else:
+                # This is a regular file path
+                file_path = Path(file_input)
+                if not file_path.exists():
+                    raise FileNotFoundError(f"File not found: {file_path}")
+                
+                # Read all sheets and register with DuckDB
+                all_sheets = self.read_all_sheets(str(file_path))
+                
+                # Clear existing tables
+                self.conn.execute("DROP TABLE IF EXISTS sales")
+                self.conn.execute("DROP TABLE IF EXISTS web_traffic")
+                
+                # Register each sheet as a table
+                for sheet_name, df in all_sheets.items():
+                    table_name = sheet_name.lower().replace(' ', '_')
+                    self.conn.register(table_name, df)
+                
+                # Execute SQL query
+                result = self.conn.execute(sql).fetchdf()
+                
+                return result
             
         except Exception as e:
             print(f"Error running query: {str(e)}")
