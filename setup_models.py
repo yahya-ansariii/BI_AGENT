@@ -41,10 +41,17 @@ def setup_custom_model_path():
         
         # Test if Ollama is available
         print("\nTesting Ollama connection...")
-        llm_agent = LLMAgent()
         
-        if llm_agent.check_model_exists("llama3:8b-instruct"):
+        # Set environment variable for current process
+        os.environ['OLLAMA_MODELS'] = ollama_config.get_model_path()
+        
+        llm_agent = LLMAgent(custom_path)
+        
+        # Check if any models are available
+        available_models = llm_agent.list_models()
+        if available_models:
             print("✅ Ollama is working with custom path!")
+            print(f"Available models: {', '.join(available_models)}")
         else:
             print("⚠️  Ollama is not running or no models found")
             print("To start Ollama with custom path, run:")

@@ -389,3 +389,89 @@ class Visualizer:
             })
         
         return visualizations
+    
+    def create_auto_visualization(self, data: pd.DataFrame, query: str = "") -> Optional[go.Figure]:
+        """Automatically create the best visualization for the data and query"""
+        try:
+            if data.empty:
+                return None
+            
+            # Determine the best chart type based on data and query
+            numeric_cols = data.select_dtypes(include=['number']).columns.tolist()
+            categorical_cols = data.select_dtypes(include=['object', 'category']).columns.tolist()
+            
+            # If only one numeric column and multiple rows, create a bar chart
+            if len(numeric_cols) == 1 and len(categorical_cols) >= 1 and len(data) <= 20:
+                cat_col = categorical_cols[0]
+                num_col = numeric_cols[0]
+                
+                fig = px.bar(
+                    data, 
+                    x=cat_col, 
+                    y=num_col,
+                    title=f"{num_col} by {cat_col}",
+                    color=num_col,
+                    color_continuous_scale='viridis'
+                )
+                fig.update_layout(
+                    xaxis_tickangle=-45,
+                    showlegend=False
+                )
+                return fig
+            
+            # If two numeric columns, create scatter plot
+            elif len(numeric_cols) >= 2 and len(data) <= 1000:
+                x_col = numeric_cols[0]
+                y_col = numeric_cols[1]
+                
+                fig = px.scatter(
+                    data, 
+                    x=x_col, 
+                    y=y_col,
+                    title=f"{y_col} vs {x_col}",
+                    color=y_col,
+                    color_continuous_scale='viridis'
+                )
+                return fig
+            
+            # If one numeric column and many rows, create histogram
+            elif len(numeric_cols) == 1 and len(data) > 20:
+                num_col = numeric_cols[0]
+                
+                fig = px.histogram(
+                    data, 
+                    x=num_col,
+                    title=f"Distribution of {num_col}",
+                    nbins=min(30, len(data)//10 + 1)
+                )
+                return fig
+            
+            # If categorical data only, create pie chart
+            elif len(categorical_cols) >= 1 and len(numeric_cols) == 0 and len(data) <= 10:
+                cat_col = categorical_cols[0]
+                value_counts = data[cat_col].value_counts()
+                
+                fig = px.pie(
+                    values=value_counts.values,
+                    names=value_counts.index,
+                    title=f"Distribution of {cat_col}"
+                )
+                return fig
+            
+            # Default: show first few rows as table
+            else:
+                # Create a simple table visualization
+                fig = go.Figure(data=[go.Table(
+                    header=dict(values=list(data.columns),
+                              fill_color='paleturquoise',
+                              align='left'),
+                    cells=dict(values=[data[col] for col in data.columns],
+                             fill_color='lavender',
+                             align='left'))
+                ])
+                fig.update_layout(title="Data Table")
+                return fig
+                
+        except Exception as e:
+            print(f"Error creating auto visualization: {str(e)}")
+            return None

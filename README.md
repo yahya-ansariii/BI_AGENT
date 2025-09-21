@@ -1,298 +1,205 @@
-# Business Insights Agent
+# 📊 BI Agent
 
-A powerful offline business intelligence tool that combines data analysis, visualization, and AI-powered insights using Python, Streamlit, DuckDB, and local LLM capabilities.
+**Your personal, private, and powerful AI Business Intelligence Agent.**
 
-## Features
+BI Agent is a comprehensive, offline-first business intelligence tool that helps you analyze data, generate insights, and create visualizations using local AI models. All processing happens on your computer, ensuring complete data privacy and security.
 
-- 📊 **Data Processing**: Excel file support with DuckDB for fast SQL queries
-- 📈 **Visualization**: Interactive charts with Plotly and Matplotlib
-- 🤖 **AI Insights**: Local LLM integration with Ollama
-- 🗂️ **Schema Management**: JSON-based data schema and relationship storage
-- 💻 **Offline Operation**: Complete offline functionality with local data processing
-- 🔗 **Multiple Connectors**: Excel, Snowflake, Google Analytics, Oncore support
+## ✨ Key Features
 
-## Tech Stack
+- **🔒 100% Offline Operation** - Your data never leaves your computer
+- **🤖 AI-Powered Analysis** - Local AI models for intelligent data insights
+- **📊 Advanced Visualizations** - Interactive charts and graphs
+- **🔗 Relationship Builder** - Create and visualize data relationships
+- **📄 Professional Reports** - Export insights as PDF, Word, or Excel
+- **🛠️ Custom SQL** - Write and execute custom SQL queries
+- **📁 Multi-Format Support** - Excel, CSV, and custom table creation
+- **🎨 Modern UI** - Clean, intuitive interface
 
-- **Python 3.10+**
-- **Streamlit** - Web interface
-- **Pandas + DuckDB** - Data processing and querying
-- **Matplotlib/Plotly** - Data visualization
-- **Ollama** - Local LLM integration
-- **JSON** - Schema and relationship storage
+## 🚀 Quick Start
 
-## Installation
+### Prerequisites
+- Python 3.10 or newer
+- 4GB+ RAM recommended
+- 2GB+ free disk space for AI models
 
-1. **Clone or download the project**
+### Installation
+
+1. **Clone the repository:**
    ```bash
-   git clone <repository-url>
-   cd business-insights-agent
+   git clone https://github.com/yourusername/bi-agent.git
+   cd bi-agent
    ```
 
-2. **Install Python dependencies**
+2. **Run the setup:**
    ```bash
-   pip install -r requirements.txt
+   # Windows
+   start.bat
+   
+   # macOS/Linux
+   ./start.sh
    ```
 
-3. **Install and setup Ollama (for AI features)**
-   ```bash
-   # Install Ollama from https://ollama.ai/
-   # Configure custom model path (optional)
-   python setup_models.py
-   # Pull a model (e.g., llama3:8b-instruct)
-   ollama pull llama3:8b-instruct
-   ```
+3. **Access the application:**
+   Open your browser to `http://localhost:8501`
 
-4. **Create demo data**
-   ```bash
-   python create_demo_data.py
-   ```
+The setup script will automatically:
+- Install all required dependencies
+- Download and configure Ollama (AI model server)
+- Download essential AI models
+- Start the application
 
-5. **Run the application**
-   ```bash
-   streamlit run app/frontend.py
-   ```
+## 📚 Usage Guide
 
-## Model Path Configuration
+### 1. Data Loading
+- **Upload Files**: Support for Excel (.xlsx, .xls) and CSV files
+- **Multi-Sheet Excel**: Automatically loads all sheets as separate tables
+- **Custom Tables**: Create tables with custom schemas
+- **Sample Data**: Try the application with pre-built demo data
 
-The application supports custom model paths for storing Ollama models:
+### 2. Data Exploration
+- **Table Management**: Rename, delete, and organize your tables
+- **Data Preview**: View and filter your data
+- **Statistics**: Comprehensive data summaries and quality metrics
+- **Visualizations**: Automatic chart generation
 
-### **Option 1: Using Setup Script**
+### 3. Relationship Building
+- **Define Relationships**: Connect tables using foreign keys
+- **ER Diagrams**: Beautiful visual representation of data relationships
+- **Validation**: Ensure data integrity and proper relationships
+
+### 4. AI Analysis
+- **Natural Language Queries**: Ask questions in plain English
+- **SQL Generation**: AI converts questions to SQL queries
+- **Custom SQL**: Write and execute your own SQL queries
+- **Enhanced Insights**: AI analyzes both query results and source data
+
+### 5. Report Generation
+- **PDF Reports**: Professional, formatted documents
+- **Word Documents**: Microsoft Word compatible exports
+- **Excel Reports**: Structured data with multiple sheets
+- **Bulk Export**: Export all insights at once
+
+## 🛠️ Technical Details
+
+### Architecture
+- **Frontend**: Streamlit web interface
+- **Data Processing**: Pandas + DuckDB for SQL queries
+- **AI Engine**: Ollama with local LLM models
+- **Visualization**: Plotly + Matplotlib + Seaborn
+- **Export**: ReportLab (PDF) + python-docx (Word)
+
+### Supported AI Models
+- Llama 3.2 (3B, 8B)
+- CodeLlama (7B, 13B)
+- DeepSeek R1 (8B)
+- Any Ollama-compatible model
+
+### Data Formats
+- **Input**: Excel (.xlsx, .xls, .xlsm, .xlsb), CSV
+- **Output**: PDF, Word (.docx), Excel (.xlsx), JSON
+
+## 🔧 Configuration
+
+### AI Model Management
 ```bash
-python setup_models.py
+# Download additional models
+ollama pull llama3.2:8b
+ollama pull codellama:13b
+
+# List available models
+ollama list
 ```
-This interactive script will help you:
-- Set a custom model path
-- Download recommended models
-- Setup dual model configuration
-- Check your current setup
 
-### **Option 2: Manual Configuration**
-1. Edit `config/model_settings.json` to set your desired path
-2. Start Ollama with custom path:
-   ```bash
-   OLLAMA_MODELS=C:\Your\Custom\Path ollama serve
-   ```
+### Custom Configuration
+Edit `config/model_settings.json` to customize:
+- Default AI model
+- Query timeouts
+- Analysis parameters
 
-### **Option 3: In the Application**
-1. Open the "Schema Approval" tab
-2. Use the "Model Configuration" section
-3. Set your custom path and check available models
-4. Configure dual models for insights comparison
-
-## Dual Model Insights
-
-The application supports comparing insights from two different Llama models:
-
-### **Features:**
-- **Side-by-side comparison** of insights from two models
-- **Model performance metrics** (response length, detail level)
-- **Configurable model selection** (llama3, llama2, mistral, etc.)
-- **Real-time model switching** in the application
-
-### **Setup:**
-1. Download multiple models: `ollama pull llama3:8b-instruct llama2:7b`
-2. Configure in the app's "Schema Approval" tab
-3. Ask questions and see both models' insights side by side
-
-### **Example Models:**
-- **Primary**: `llama3:8b-instruct` (detailed analysis)
-- **Secondary**: `llama2:7b` (concise insights)
-- **Alternative**: `mistral:7b-instruct` (different perspective)
-
-## Usage
-
-### 1. Schema Approval
-- Load demo schema or upload your own Excel files
-- Review table structures and column information
-- Define relationships between tables (e.g., sales.date = web_traffic.date)
-- Save schema and relationships for future use
-
-### 2. Ask Questions
-- Enter natural language questions about your data
-- Examples:
-  - "Total sales by region"
-  - "Compare sales and visits by date"
-  - "Average amount by region"
-  - "Show top performing sources"
-- Get automatically generated SQL queries
-- View query results with insights and visualizations
-
-### 3. AI-Powered Analysis
-- Natural language to SQL conversion
-- **Dual model insights comparison** - Compare insights from two different Llama models
-- Automated insights generation
-- Business recommendations based on data patterns
-- Data quality assessment
-- Model performance comparison
-
-### 4. Visualization
-- Automatic chart generation based on data types
-- Bar charts for categorical data
-- Line charts for time series data
-- Scatter plots for correlation analysis
-
-### 5. Multiple Data Sources
-- Excel files (.xlsx, .xls)
-- Snowflake databases
-- Google Analytics
-- Oncore systems
-
-## Configuration
-
-### LLM Models
-The application supports various Ollama models:
-- `llama2` - General purpose model
-- `codellama` - Code-focused model
-- `mistral` - Efficient model
-- `phi` - Microsoft's Phi model
-
-### Data Sources
-- Excel files (.xlsx, .xls)
-- Sample business data (automatically generated)
-- Future: Database connections, CSV files
-
-## Project Structure
+## 📁 Project Structure
 
 ```
-business-insights-agent/
-├── app/
-│   ├── __init__.py
-│   └── frontend.py        # Main Streamlit application
-├── agent/
-│   ├── __init__.py
-│   ├── llm_agent.py       # LLM integration with Ollama
-│   ├── sql_generator.py   # SQL generation from natural language
-│   └── insights.py        # Insights generation
-├── connectors/
-│   ├── __init__.py
-│   ├── excel_connector.py # Excel file operations
-│   ├── snowflake_connector.py # Snowflake database
-│   ├── ga_connector.py    # Google Analytics
-│   └── oncore_connector.py # Oncore system
-├── schema_store/          # JSON schema storage
-│   ├── schema.json
-│   └── relationships.json
-├── demo_data/            # Demo Excel files
-│   ├── sales.xlsx
-│   └── web_traffic.xlsx
-├── tests/                # Test cases
-│   ├── __init__.py
-│   └── test_agent.py
+bi-agent/
+├── app.py                 # Main Streamlit application
+├── start.py              # Setup and launch script
 ├── requirements.txt      # Python dependencies
-├── create_demo_data.py   # Demo data creation script
-└── README.md            # This file
+├── modules/              # Core functionality
+│   ├── data_processor.py # Data loading and processing
+│   ├── llm_agent.py     # AI analysis engine
+│   ├── visualizer.py    # Chart generation
+│   └── schema_manager.py # Data relationships
+├── config/               # Configuration files
+│   └── ollama_config.py  # Ollama settings
+└── connectors/           # External data connectors
+    ├── excel_connector.py
+    ├── ga_connector.py
+    └── snowflake_connector.py
 ```
 
-## API Reference
+## 🔒 Privacy & Security
 
-### DataProcessor
-- `load_excel_data(file_upload)` - Load Excel data
-- `load_sample_data()` - Load sample business data
-- `execute_sql_query(query)` - Execute SQL on data
-- `get_data_summary()` - Get comprehensive data summary
+- **Local Processing**: All data analysis happens on your machine
+- **No Cloud Dependencies**: Works completely offline after setup
+- **No Data Transmission**: Your data never leaves your computer
+- **Open Source**: Full source code available for review
 
-### Visualizer
-- `create_sales_trend_chart(data)` - Sales trend visualization
-- `create_category_analysis(data)` - Category breakdown
-- `create_correlation_heatmap(data)` - Correlation analysis
-- `create_dashboard_summary(data)` - Complete dashboard
-
-### LLMAgent
-- `analyze_data(query, data)` - AI-powered data analysis
-- `sales_analysis(data)` - Automated sales insights
-- `customer_analysis(data)` - Customer segmentation analysis
-- `get_quick_insights(data)` - Quick data overview
-
-### SchemaManager
-- `update_schema_from_data(data)` - Update schema from data
-- `add_relationship(from_table, to_table)` - Add data relationships
-- `detect_relationships(data)` - Auto-detect relationships
-- `export_schema(filepath)` - Export schema configuration
-
-## Troubleshooting
+## 🐛 Troubleshooting
 
 ### Common Issues
 
-1. **Ollama not running**
-   - Ensure Ollama is installed and running
-   - Check if the model is pulled: `ollama list`
-   - Start Ollama service: `ollama serve`
-
-2. **Memory issues with large datasets**
-   - Use data sampling for initial analysis
-   - Consider chunking large Excel files
-   - Monitor memory usage in the dashboard
-
-3. **Visualization errors**
-   - Check data types and column names
-   - Ensure numeric columns for charts
-   - Verify date columns are properly formatted
-
-### Performance Tips
-
-- Use DuckDB for large dataset queries
-- Sample data for initial exploration
-- Cache frequently used visualizations
-- Optimize LLM prompts for better performance
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests if applicable
-5. Submit a pull request
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Testing
-
-Run the test suite to verify functionality:
-
+**"Ollama not found"**
 ```bash
-# Install pytest if not already installed
-pip install pytest
-
-# Run all tests
-pytest tests/
-
-# Run specific test file
-pytest tests/test_agent.py
-
-# Run with verbose output
-pytest -v tests/
+# Install Ollama manually
+curl -fsSL https://ollama.ai/install.sh | sh
 ```
 
-The test suite includes:
-- SQL generation validation
-- Schema loading tests
-- Relationship handling tests
-- Excel connector functionality
+**"No models available"**
+```bash
+# Download a model
+ollama pull llama3.2:3b
+```
 
-## Example Queries
+**"Port 8501 already in use"**
+```bash
+# Kill existing Streamlit processes
+pkill -f streamlit
+```
 
-Try these example queries in the "Ask Questions" tab:
+### Getting Help
+- Check the [Issues](https://github.com/yourusername/bi-agent/issues) page
+- Review the [User Guide](USER_GUIDE.md)
+- Run the verification script: `python verify_offline.py`
 
-- **"Total sales by region"** - Groups sales data by region
-- **"Compare sales and visits by date"** - Joins sales and web traffic data
-- **"Average amount by region"** - Calculates average sales by region
-- **"Show top performing sources"** - Ranks traffic sources by visits
-- **"Sales trend over time"** - Shows sales progression over dates
+## 🤝 Contributing
 
-## Support
+We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.md) for details.
 
-For issues and questions:
-- Check the troubleshooting section
-- Review the API documentation
-- Open an issue on GitHub
+### Development Setup
+```bash
+git clone https://github.com/yourusername/bi-agent.git
+cd bi-agent
+pip install -r requirements.txt
+python -m streamlit run app.py
+```
 
-## Roadmap
+## 📄 License
 
-- [ ] Database connectivity (PostgreSQL, MySQL)
-- [ ] Advanced ML models integration
-- [ ] Real-time data streaming
-- [ ] Collaborative features
-- [ ] Mobile app support
-- [ ] Cloud deployment options
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🙏 Acknowledgments
+
+- [Ollama](https://ollama.ai/) for local AI model serving
+- [Streamlit](https://streamlit.io/) for the web interface
+- [DuckDB](https://duckdb.org/) for fast SQL processing
+- [Plotly](https://plotly.com/) for interactive visualizations
+
+## 📊 Screenshots
+
+![Data Loading](screenshots/data-loading.png)
+![AI Analysis](screenshots/ai-analysis.png)
+![ER Diagram](screenshots/er-diagram.png)
+![Report Export](screenshots/report-export.png)
+
+---
+
+**Made with ❤️ for data-driven decision making**

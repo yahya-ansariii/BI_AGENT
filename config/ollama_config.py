@@ -116,8 +116,14 @@ class OllamaConfig:
         """
         try:
             import subprocess
+            
+            # Set environment variable for model path
+            env = os.environ.copy()
+            env['OLLAMA_MODELS'] = self.get_model_path()
+            
             result = subprocess.run(
                 [self.ollama_executable, "list"],
+                env=env,
                 capture_output=True,
                 text=True,
                 timeout=10
@@ -171,8 +177,14 @@ class OllamaConfig:
         try:
             # First try to get models from Ollama command
             import subprocess
+            
+            # Set environment variable for model path
+            env = os.environ.copy()
+            env['OLLAMA_MODELS'] = self.get_model_path()
+            
             result = subprocess.run(
                 [self.ollama_executable, "list"],
+                env=env,
                 capture_output=True,
                 text=True,
                 timeout=10

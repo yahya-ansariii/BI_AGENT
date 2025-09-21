@@ -1,32 +1,16 @@
 """
 LLM Agent Module
-Handles AI-powered data analysis using LangChain and Ollama
+Handles AI-powered data analysis using direct Ollama API calls
 """
 
 import pandas as pd
 import json
-from typing import Optional, Dict, Any, List
 import requests
 import os
+from typing import Optional, Dict, Any, List
 from datetime import datetime
 
-try:
-    from langchain.llms import Ollama
-    from langchain.prompts import PromptTemplate
-    from langchain.chains import LLMChain
-    from langchain.schema import BaseOutputParser
-    from langchain.callbacks.manager import CallbackManager
-    from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
-except ImportError:
-    print("Warning: LangChain not available. LLM features will be limited.")
-    Ollama = None
-    PromptTemplate = None
-    LLMChain = None
-    BaseOutputParser = None
-    CallbackManager = None
-    StreamingStdOutCallbackHandler = None
-
-class BusinessInsightsParser(BaseOutputParser):
+class BusinessInsightsParser:
     """Custom parser for business insights output"""
     
     def parse(self, text: str) -> Dict[str, Any]:
@@ -39,33 +23,34 @@ class BusinessInsightsParser(BaseOutputParser):
                 json_str = text[json_start:json_end].strip()
                 return json.loads(json_str)
             elif "{" in text and "}" in text:
-                json_start = text.find("{")
-                json_end = text.rfind("}") + 1
-                json_str = text[json_start:json_end]
+                # Try to find JSON-like structure
+                start = text.find("{")
+                end = text.rfind("}") + 1
+                json_str = text[start:end]
                 return json.loads(json_str)
             else:
+                # Return as text analysis
                 return {
                     "insights": text,
-                    "timestamp": datetime.now().isoformat(),
+                    "confidence": 0.8,
                     "type": "text_analysis"
                 }
-        except Exception as e:
+        except Exception:
             return {
                 "insights": text,
-                "error": str(e),
-                "timestamp": datetime.now().isoformat(),
+                "confidence": 0.6,
                 "type": "text_analysis"
             }
 
 class LLMAgent:
-    """AI agent for business data analysis using LangChain and Ollama"""
+    """AI agent for business data analysis using direct Ollama API calls"""
     
     def __init__(self):
         """Initialize the LLM agent"""
-        self.llm = None
         self.model_name = None
         self.insights_history = []
         self.ollama_base_url = "http://localhost:11434"
+        self.parser = BusinessInsightsParser()
         
     def initialize_model(self, model_name: str = "llama2") -> bool:
         """
@@ -86,18 +71,6 @@ class LLMAgent:
             if not self._check_model_availability(model_name):
                 raise Exception(f"Model {model_name} is not available. Please pull it first.")
             
-            if Ollama is not None:
-                # Initialize LangChain Ollama
-                callback_manager = CallbackManager([StreamingStdOutCallbackHandler()])
-                self.llm = Ollama(
-                    model=model_name,
-                    base_url=self.ollama_base_url,
-                    callback_manager=callback_manager
-                )
-            else:
-                # Fallback to direct API calls
-                self.llm = "api_mode"
-            
             self.model_name = model_name
             return True
             
@@ -114,7 +87,7 @@ class LLMAgent:
             return False
     
     def _check_model_availability(self, model_name: str) -> bool:
-        """Check if the specified model is available"""
+        """Check if model is available"""
         try:
             response = requests.get(f"{self.ollama_base_url}/api/tags", timeout=5)
             if response.status_code == 200:
@@ -123,6 +96,17 @@ class LLMAgent:
             return False
         except:
             return False
+    
+    def list_models(self) -> List[str]:
+        """List available models"""
+        try:
+            response = requests.get(f"{self.ollama_base_url}/api/tags", timeout=5)
+            if response.status_code == 200:
+                models = response.json().get('models', [])
+                return [model['name'] for model in models]
+            return []
+        except:
+            return []
     
     def analyze_data(self, query: str, data: pd.DataFrame) -> str:
         """
@@ -142,12 +126,8 @@ class LLMAgent:
             # Create prompt
             prompt = self._create_analysis_prompt(query, data_summary)
             
-            if self.llm == "api_mode":
-                # Use direct API call
-                response = self._call_ollama_api(prompt)
-            else:
-                # Use LangChain
-                response = self._call_langchain_llm(prompt)
+            # Call Ollama API
+            response = self._call_ollama_api(prompt)
             
             # Store in history
             self.insights_history.append({
@@ -166,14 +146,25 @@ class LLMAgent:
     
     def _prepare_data_summary(self, data: pd.DataFrame) -> Dict[str, Any]:
         """Prepare data summary for LLM analysis"""
+        # Convert dtypes to strings for JSON serialization
+        dtypes_dict = {col: str(dtype) for col, dtype in data.dtypes.items()}
+        
+        # Convert sample data to JSON-serializable format
+        sample_data = data.head(5).copy()
+        for col in sample_data.columns:
+            if sample_data[col].dtype == 'datetime64[ns]':
+                sample_data[col] = sample_data[col].dt.strftime('%Y-%m-%d %H:%M:%S')
+            elif sample_data[col].dtype == 'object':
+                sample_data[col] = sample_data[col].astype(str)
+        
         summary = {
             "shape": data.shape,
             "columns": list(data.columns),
-            "dtypes": data.dtypes.to_dict(),
+            "dtypes": dtypes_dict,
             "numeric_columns": data.select_dtypes(include=['number']).columns.tolist(),
             "categorical_columns": data.select_dtypes(include=['object']).columns.tolist(),
             "missing_values": data.isnull().sum().to_dict(),
-            "sample_data": data.head(5).to_dict('records')
+            "sample_data": sample_data.to_dict('records')
         }
         
         # Add basic statistics for numeric columns
@@ -211,193 +202,227 @@ Format your response as a structured analysis with clear sections.
         return prompt
     
     def _call_ollama_api(self, prompt: str) -> str:
-        """Call Ollama API directly"""
+        """Call Ollama API directly with improved error handling"""
         try:
             response = requests.post(
                 f"{self.ollama_base_url}/api/generate",
                 json={
                     "model": self.model_name,
                     "prompt": prompt,
-                    "stream": False
+                    "stream": False,
+                    "options": {
+                        "temperature": 0.7,
+                        "top_p": 0.9,
+                        "max_tokens": 2000
+                    }
                 },
-                timeout=60
+                timeout=120  # Increased timeout
             )
             
             if response.status_code == 200:
-                return response.json().get('response', 'No response generated')
+                result = response.json()
+                return result.get('response', 'No response generated')
             else:
-                return f"API Error: {response.status_code}"
+                return f"API Error: {response.status_code} - {response.text}"
                 
+        except requests.exceptions.Timeout:
+            return "AI analysis timed out. Please try with a simpler query or check if Ollama is running properly."
+        except requests.exceptions.ConnectionError:
+            return "Cannot connect to Ollama. Please ensure Ollama is running (ollama serve)."
         except Exception as e:
             return f"API call failed: {str(e)}"
     
-    def _call_langchain_llm(self, prompt: str) -> str:
-        """Call LLM using LangChain"""
-        try:
-            if self.llm is None:
-                return "LLM not initialized"
-            
-            response = self.llm(prompt)
-            return response
-            
-        except Exception as e:
-            return f"LangChain call failed: {str(e)}"
-    
     def get_quick_insights(self, data: pd.DataFrame) -> str:
         """Get quick insights about the data"""
-        try:
-            insights = []
+        if data.empty:
+            return "No data available for analysis."
+        
+        insights = []
+        
+        # Basic data info
+        insights.append(f"Dataset contains {data.shape[0]} rows and {data.shape[1]} columns.")
+        
+        # Missing values
+        missing = data.isnull().sum().sum()
+        if missing > 0:
+            insights.append(f"Found {missing} missing values across the dataset.")
+        else:
+            insights.append("No missing values found - data quality looks good!")
+        
+        # Numeric columns analysis
+        numeric_cols = data.select_dtypes(include=['number']).columns
+        if len(numeric_cols) > 0:
+            insights.append(f"Found {len(numeric_cols)} numeric columns: {', '.join(numeric_cols)}")
             
-            # Basic data info
-            insights.append(f"📊 Dataset Overview:")
-            insights.append(f"   • {data.shape[0]:,} records, {data.shape[1]} columns")
-            insights.append(f"   • Memory usage: {data.memory_usage(deep=True).sum() / 1024 / 1024:.1f} MB")
-            
-            # Data quality
-            missing_pct = (data.isnull().sum().sum() / data.size) * 100
-            insights.append(f"   • Data completeness: {100 - missing_pct:.1f}%")
-            
-            # Numeric columns analysis
-            numeric_cols = data.select_dtypes(include=['number']).columns
+            # Basic stats for first numeric column
             if len(numeric_cols) > 0:
-                insights.append(f"\n📈 Numeric Analysis:")
-                for col in numeric_cols[:3]:  # Show top 3 numeric columns
-                    col_data = data[col].dropna()
-                    if len(col_data) > 0:
-                        insights.append(f"   • {col}: {col_data.mean():.2f} avg, {col_data.min():.2f}-{col_data.max():.2f} range")
-            
-            # Categorical columns analysis
-            categorical_cols = data.select_dtypes(include=['object']).columns
-            if len(categorical_cols) > 0:
-                insights.append(f"\n📋 Categorical Analysis:")
-                for col in categorical_cols[:3]:  # Show top 3 categorical columns
-                    unique_count = data[col].nunique()
-                    most_common = data[col].value_counts().head(1).index[0] if unique_count > 0 else "N/A"
-                    insights.append(f"   • {col}: {unique_count} unique values, most common: {most_common}")
-            
-            return "\n".join(insights)
-            
-        except Exception as e:
-            return f"Error generating quick insights: {str(e)}"
+                first_col = numeric_cols[0]
+                col_data = data[first_col].dropna()
+                if not col_data.empty:
+                    insights.append(f"Sample stats for '{first_col}': min={col_data.min():.2f}, max={col_data.max():.2f}, mean={col_data.mean():.2f}")
+        
+        # Categorical columns
+        cat_cols = data.select_dtypes(include=['object']).columns
+        if len(cat_cols) > 0:
+            insights.append(f"Found {len(cat_cols)} categorical columns: {', '.join(cat_cols)}")
+        
+        return "\n".join(insights)
     
     def sales_analysis(self, data: pd.DataFrame) -> str:
-        """Perform sales analysis"""
-        try:
-            if 'total_sales' not in data.columns:
-                return "❌ No sales data found. Please ensure your data has a 'total_sales' column."
-            
-            insights = []
-            insights.append("💰 Sales Analysis Report")
-            insights.append("=" * 50)
-            
-            # Total sales
-            total_sales = data['total_sales'].sum()
-            insights.append(f"Total Sales: ${total_sales:,.2f}")
-            
-            # Average order value
-            avg_order_value = data['total_sales'].mean()
-            insights.append(f"Average Order Value: ${avg_order_value:.2f}")
-            
-            # Top performing products
-            if 'product_name' in data.columns:
-                top_products = data.groupby('product_name')['total_sales'].sum().nlargest(5)
-                insights.append(f"\n🏆 Top 5 Products:")
-                for product, sales in top_products.items():
-                    insights.append(f"   • {product}: ${sales:,.2f}")
-            
-            # Sales by category
-            if 'category' in data.columns:
-                category_sales = data.groupby('category')['total_sales'].sum().sort_values(ascending=False)
-                insights.append(f"\n📊 Sales by Category:")
-                for category, sales in category_sales.items():
-                    pct = (sales / total_sales) * 100
-                    insights.append(f"   • {category}: ${sales:,.2f} ({pct:.1f}%)")
-            
-            # Sales trends
-            if 'date' in data.columns:
-                data['date'] = pd.to_datetime(data['date'])
-                monthly_sales = data.groupby(data['date'].dt.to_period('M'))['total_sales'].sum()
-                best_month = monthly_sales.idxmax()
-                worst_month = monthly_sales.idxmin()
-                insights.append(f"\n📈 Sales Trends:")
-                insights.append(f"   • Best Month: {best_month} (${monthly_sales[best_month]:,.2f})")
-                insights.append(f"   • Worst Month: {worst_month} (${monthly_sales[worst_month]:,.2f})")
-            
-            return "\n".join(insights)
-            
-        except Exception as e:
-            return f"Error in sales analysis: {str(e)}"
+        """Perform sales analysis on the data"""
+        prompt = """
+Analyze this data for sales insights. Look for:
+1. Sales trends and patterns
+2. Top performing products/categories
+3. Seasonal variations
+4. Customer behavior patterns
+5. Revenue analysis
+6. Growth opportunities
+
+Provide specific recommendations for improving sales performance.
+"""
+        return self.analyze_data(prompt, data)
     
     def customer_analysis(self, data: pd.DataFrame) -> str:
-        """Perform customer analysis"""
-        try:
-            insights = []
-            insights.append("👥 Customer Analysis Report")
-            insights.append("=" * 50)
-            
-            # Customer count
-            if 'customer_id' in data.columns:
-                unique_customers = data['customer_id'].nunique()
-                total_orders = len(data)
-                avg_orders_per_customer = total_orders / unique_customers
-                insights.append(f"Total Customers: {unique_customers:,}")
-                insights.append(f"Total Orders: {total_orders:,}")
-                insights.append(f"Average Orders per Customer: {avg_orders_per_customer:.1f}")
-            
-            # Customer segments
-            if 'customer_segment' in data.columns:
-                segment_analysis = data.groupby('customer_segment').agg({
-                    'customer_id': 'nunique',
-                    'total_sales': ['sum', 'mean']
-                }).round(2)
-                
-                insights.append(f"\n🎯 Customer Segments:")
-                for segment in segment_analysis.index:
-                    customers = segment_analysis.loc[segment, ('customer_id', 'nunique')]
-                    total_sales = segment_analysis.loc[segment, ('total_sales', 'sum')]
-                    avg_sales = segment_analysis.loc[segment, ('total_sales', 'mean')]
-                    insights.append(f"   • {segment}: {customers} customers, ${total_sales:,.2f} total, ${avg_sales:.2f} avg")
-            
-            # Geographic analysis
-            if 'region' in data.columns:
-                region_analysis = data.groupby('region').agg({
-                    'customer_id': 'nunique',
-                    'total_sales': 'sum'
-                }).sort_values('total_sales', ascending=False)
-                
-                insights.append(f"\n🌍 Geographic Distribution:")
-                for region in region_analysis.index:
-                    customers = region_analysis.loc[region, 'customer_id']
-                    sales = region_analysis.loc[region, 'total_sales']
-                    insights.append(f"   • {region}: {customers} customers, ${sales:,.2f} sales")
-            
-            # Customer value analysis
-            if 'customer_id' in data.columns and 'total_sales' in data.columns:
-                customer_value = data.groupby('customer_id')['total_sales'].sum().sort_values(ascending=False)
-                top_customers = customer_value.head(5)
-                insights.append(f"\n💎 Top 5 Customers by Value:")
-                for i, (customer_id, value) in enumerate(top_customers.items(), 1):
-                    insights.append(f"   {i}. Customer {customer_id}: ${value:,.2f}")
-            
-            return "\n".join(insights)
-            
-        except Exception as e:
-            return f"Error in customer analysis: {str(e)}"
+        """Perform customer analysis on the data"""
+        prompt = """
+Analyze this data for customer insights. Look for:
+1. Customer segmentation opportunities
+2. Customer lifetime value patterns
+3. Churn risk indicators
+4. Customer acquisition trends
+5. Behavioral patterns
+6. Retention strategies
+
+Provide specific recommendations for customer engagement and retention.
+"""
+        return self.analyze_data(prompt, data)
     
     def get_insights_history(self) -> List[Dict[str, Any]]:
-        """Get history of all insights generated"""
+        """Get the history of insights generated"""
         return self.insights_history
     
     def clear_history(self):
-        """Clear insights history"""
+        """Clear the insights history"""
         self.insights_history = []
     
-    def export_insights(self, filepath: str) -> bool:
-        """Export insights history to JSON file"""
+    def generate_sql_query(self, question: str, data: pd.DataFrame) -> str:
+        """Generate SQL query from natural language question"""
         try:
-            with open(filepath, 'w') as f:
-                json.dump(self.insights_history, f, indent=2)
-            return True
+            # Get column information
+            columns = list(data.columns)
+            dtypes = {col: str(dtype) for col, dtype in data.dtypes.items()}
+            
+            # Create SQL generation prompt
+            prompt = f"""
+            You are a SQL expert. Generate a SQL query to answer this business question.
+            
+            Question: {question}
+            
+            Available data:
+            - Table name: 'data'
+            - Columns: {', '.join(columns)}
+            - Column types: {dtypes}
+            
+            Sample data (first 3 rows):
+            {data.head(3).to_dict('records')}
+            
+            Generate a SQL query that:
+            1. Answers the question accurately
+            2. Uses proper SQL syntax
+            3. Handles data types correctly
+            4. Includes appropriate WHERE, GROUP BY, ORDER BY clauses as needed
+            5. Uses LIMIT for large result sets
+            
+            Return ONLY the SQL query, no explanations.
+            """
+            
+            # Call Ollama API
+            response = self._call_ollama_api(prompt)
+            
+            # Clean up the response to extract just the SQL
+            sql_query = response.strip()
+            if '```sql' in sql_query:
+                sql_query = sql_query.split('```sql')[1].split('```')[0].strip()
+            elif '```' in sql_query:
+                sql_query = sql_query.split('```')[1].split('```')[0].strip()
+            
+            return sql_query
+            
         except Exception as e:
-            print(f"Error exporting insights: {str(e)}")
-            return False
+            return f"SELECT * FROM data LIMIT 10; -- Error generating SQL: {str(e)}"
+    
+    def get_quick_sql_insights(self, data: pd.DataFrame) -> str:
+        """Generate quick SQL insights for the data"""
+        try:
+            columns = list(data.columns)
+            dtypes = {col: str(dtype) for col, dtype in data.dtypes.items()}
+            
+            prompt = f"""
+            Generate 3 useful SQL queries for this business data.
+            
+            Available data:
+            - Columns: {', '.join(columns)}
+            - Column types: {dtypes}
+            
+            Generate SQL queries for:
+            1. Basic data overview
+            2. Top performing items/categories
+            3. Trends over time (if date columns exist)
+            
+            Return each query with a brief comment explaining what it does.
+            """
+            
+            response = self._call_ollama_api(prompt)
+            return response
+            
+        except Exception as e:
+            return f"-- Error generating SQL insights: {str(e)}"
+    
+    def analyze_query_results(self, question: str, results: pd.DataFrame, source_tables: Dict = None) -> str:
+        """Analyze SQL query results and provide enhanced insights using source tables"""
+        try:
+            # Prepare results summary
+            results_summary = {
+                "shape": results.shape,
+                "columns": list(results.columns),
+                "sample_data": results.head(5).to_dict('records'),
+                "numeric_summary": results.describe().to_dict() if not results.select_dtypes(include=['number']).empty else {}
+            }
+            
+            # Prepare source tables context
+            source_context = ""
+            if source_tables:
+                source_context = "\n\nSource Tables Context:\n"
+                for table_name, table_df in source_tables.items():
+                    source_context += f"\n{table_name} ({table_df.shape[0]} rows):\n"
+                    source_context += f"- Columns: {', '.join(table_df.columns)}\n"
+                    source_context += f"- Sample data: {table_df.head(2).to_dict('records')}\n"
+            
+            # Create enhanced analysis prompt
+            prompt = f"""
+            You are a senior business analyst. Analyze these SQL query results and provide concise, professional business insights.
+            
+            Original Question: {question}
+            
+            Query Results:
+            - Shape: {results_summary['shape']}
+            - Columns: {', '.join(results_summary['columns'])}
+            - Sample Results: {results_summary['sample_data']}
+            - Numeric Summary: {results_summary['numeric_summary']}
+            {source_context}
+            
+            Provide a concise analysis with:
+            1. **Key Findings** (2-3 bullet points)
+            2. **Business Impact** (what this means for the business)
+            3. **Recommendations** (specific actionable next steps)
+            
+            Keep insights professional, data-driven, and actionable. Focus on business value.
+            """
+            
+            # Call Ollama API
+            response = self._call_ollama_api(prompt)
+            return response
+            
+        except Exception as e:
+            return f"Error analyzing query results: {str(e)}"
