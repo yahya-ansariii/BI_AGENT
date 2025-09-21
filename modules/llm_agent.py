@@ -101,6 +101,24 @@ class LLMAgent:
         except:
             return False
     
+    def _serialize_dataframe_for_json(self, df: pd.DataFrame) -> str:
+        """Convert DataFrame to JSON-serializable string format"""
+        try:
+            # Create a copy to avoid modifying original
+            df_copy = df.copy()
+            
+            # Convert Timestamp and other non-serializable objects to strings
+            for col in df_copy.columns:
+                if df_copy[col].dtype == 'datetime64[ns]':
+                    df_copy[col] = df_copy[col].dt.strftime('%Y-%m-%d %H:%M:%S')
+                elif df_copy[col].dtype == 'object':
+                    # Convert any remaining non-serializable objects to strings
+                    df_copy[col] = df_copy[col].astype(str)
+            
+            return str(df_copy.to_dict('records'))
+        except Exception as e:
+            return f"Error serializing data: {str(e)}"
+    
     def list_models(self) -> List[str]:
         """List available models"""
         try:
@@ -329,7 +347,7 @@ Provide specific recommendations for customer engagement and retention.
             - Column types: {dtypes}
             
             Sample data (first 3 rows):
-            {data.head(3).to_dict('records')}
+            {self._serialize_dataframe_for_json(data.head(3))}
             
             Generate a SQL query that:
             1. Answers the question accurately and directly
@@ -368,11 +386,23 @@ Provide specific recommendations for customer engagement and retention.
             # Prepare table information
             table_info = {}
             for table_name, df in tables.items():
+                # Get column information and structure
+                columns = list(df.columns)
+                dtypes = {col: str(dtype) for col, dtype in df.dtypes.items()}
+                
+                # Categorize columns by type
+                numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
+                text_cols = df.select_dtypes(include=['object', 'string']).columns.tolist()
+                datetime_cols = df.select_dtypes(include=['datetime64']).columns.tolist()
+                
                 table_info[table_name] = {
-                    'columns': list(df.columns),
-                    'dtypes': {col: str(dtype) for col, dtype in df.dtypes.items()},
-                    'sample_data': df.head(2).to_dict('records'),
-                    'row_count': len(df)
+                    'table_name': table_name,
+                    'columns': columns,
+                    'dtypes': dtypes,
+                    'row_count': len(df),
+                    'numeric_columns': numeric_cols,
+                    'text_columns': text_cols,
+                    'datetime_columns': datetime_cols
                 }
             
             # Create comprehensive SQL generation prompt
@@ -446,25 +476,49 @@ Provide specific recommendations for customer engagement and retention.
             return f"-- Error generating SQL insights: {str(e)}"
     
     def detect_relationships(self, tables: Dict[str, pd.DataFrame]) -> List[Dict]:
-        """Detect potential relationships between tables using AI"""
+        """Detect potential relationships between tables using AI based on structure only"""
         try:
-            # Prepare table information
+            # Prepare table information - only structural data, no sample data
             table_info = {}
             for table_name, df in tables.items():
+                # Get column information
+                columns = list(df.columns)
+                dtypes = {col: str(dtype) for col, dtype in df.dtypes.items()}
+                
+                # Categorize columns by type
+                numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
+                text_cols = df.select_dtypes(include=['object', 'string']).columns.tolist()
+                datetime_cols = df.select_dtypes(include=['datetime64']).columns.tolist()
+                
+                # Identify potential key columns
+                potential_keys = []
+                for col in columns:
+                    col_lower = col.lower()
+                    # Look for common key patterns
+                    if any(pattern in col_lower for pattern in ['id', 'key', 'pk', 'primary']):
+                        potential_keys.append(col)
+                    elif col_lower in ['id']:  # Simple 'id' column
+                        potential_keys.append(col)
+                
                 table_info[table_name] = {
-                    'columns': list(df.columns),
-                    'sample_data': df.head(2).to_dict('records'),
-                    'dtypes': {col: str(dtype) for col, dtype in df.dtypes.items()}
+                    'table_name': table_name,
+                    'columns': columns,
+                    'dtypes': dtypes,
+                    'row_count': len(df),
+                    'numeric_columns': numeric_cols,
+                    'text_columns': text_cols,
+                    'datetime_columns': datetime_cols,
+                    'potential_keys': potential_keys
                 }
             
-            # Create relationship detection prompt
+            # Create relationship detection prompt focused on structure
             prompt = f"""
-            Analyze these database tables and suggest potential relationships between them.
+            Analyze these database tables and suggest potential relationships based on their structure.
             
-            Tables:
+            Table Structure:
             {json.dumps(table_info, indent=2)}
             
-            Based on column names, data types, and sample data, suggest relationships in this format:
+            Based on table names, column names, data types, and potential key columns, suggest relationships in this format:
             [
                 {{
                     "source_table": "table1",
@@ -472,27 +526,51 @@ Provide specific recommendations for customer engagement and retention.
                     "source_column": "id",
                     "target_column": "table1_id",
                     "relationship_type": "One-to-Many",
-                    "confidence": "High"
+                    "confidence": "High",
+                    "reasoning": "Column naming pattern suggests foreign key relationship"
                 }}
             ]
             
-            Look for:
+            Focus on:
             - Primary key to foreign key relationships (id, _id, _key columns)
-            - Common naming patterns (customer_id, product_id, etc.)
-            - Data type compatibility
-            - Logical business relationships
+            - Common naming patterns (customer_id, product_id, user_id, etc.)
+            - Data type compatibility (matching types between keys)
+            - Logical business relationships based on table/column names
+            - Potential keys identified in each table
             
-            Return only valid JSON array, no other text.
+            Examples of good relationships:
+            - users.id → orders.user_id (One-to-Many)
+            - products.id → order_items.product_id (One-to-Many)
+            - categories.id → products.category_id (One-to-Many)
+            - customers.id → orders.customer_id (One-to-Many)
+            
+            IMPORTANT: Return ONLY the JSON array. Do not include any explanatory text, comments, or other content. Start your response with [ and end with ].
             """
             
             response = self._call_ollama_api(prompt)
             
-            # Parse JSON response
+            # Parse JSON response - handle cases where AI adds extra text
             try:
+                # First try direct JSON parsing
                 relationships = json.loads(response)
                 return relationships if isinstance(relationships, list) else []
             except json.JSONDecodeError:
-                return []
+                # Try to extract JSON from response if AI added extra text
+                try:
+                    # Look for JSON array pattern in the response
+                    import re
+                    json_match = re.search(r'\[.*\]', response, re.DOTALL)
+                    if json_match:
+                        json_str = json_match.group(0)
+                        relationships = json.loads(json_str)
+                        return relationships if isinstance(relationships, list) else []
+                    else:
+                        print(f"Could not find JSON array in response: {response[:200]}...")
+                        return []
+                except (json.JSONDecodeError, AttributeError) as parse_err:
+                    print(f"JSON parsing error in relationship detection: {str(parse_err)}")
+                    print(f"Response was: {response[:200]}...")
+                    return []
                 
         except Exception as e:
             print(f"Error detecting relationships: {str(e)}")
@@ -501,22 +579,36 @@ Provide specific recommendations for customer engagement and retention.
     def analyze_query_results(self, question: str, results: pd.DataFrame, source_tables: Dict = None) -> str:
         """Analyze SQL query results and provide enhanced insights using source tables"""
         try:
-            # Prepare results summary
+            # Prepare results summary - structure only
+            numeric_cols = results.select_dtypes(include=['number']).columns.tolist()
+            text_cols = results.select_dtypes(include=['object', 'string']).columns.tolist()
+            datetime_cols = results.select_dtypes(include=['datetime64']).columns.tolist()
+            
             results_summary = {
                 "shape": results.shape,
                 "columns": list(results.columns),
-                "sample_data": results.head(5).to_dict('records'),
+                "column_types": {
+                    "numeric": numeric_cols,
+                    "text": text_cols,
+                    "datetime": datetime_cols
+                },
                 "numeric_summary": results.describe().to_dict() if not results.select_dtypes(include=['number']).empty else {}
             }
             
-            # Prepare source tables context
+            # Prepare source tables context - structure only
             source_context = ""
             if source_tables:
                 source_context = "\n\nSource Tables Context:\n"
                 for table_name, table_df in source_tables.items():
+                    numeric_cols = table_df.select_dtypes(include=['number']).columns.tolist()
+                    text_cols = table_df.select_dtypes(include=['object', 'string']).columns.tolist()
+                    datetime_cols = table_df.select_dtypes(include=['datetime64']).columns.tolist()
+                    
                     source_context += f"\n{table_name} ({table_df.shape[0]} rows):\n"
                     source_context += f"- Columns: {', '.join(table_df.columns)}\n"
-                    source_context += f"- Sample data: {table_df.head(2).to_dict('records')}\n"
+                    source_context += f"- Numeric columns: {', '.join(numeric_cols) if numeric_cols else 'None'}\n"
+                    source_context += f"- Text columns: {', '.join(text_cols) if text_cols else 'None'}\n"
+                    source_context += f"- Datetime columns: {', '.join(datetime_cols) if datetime_cols else 'None'}\n"
             
             # Create enhanced analysis prompt
             prompt = f"""
@@ -527,7 +619,7 @@ Provide specific recommendations for customer engagement and retention.
             Query Results:
             - Shape: {results_summary['shape']}
             - Columns: {', '.join(results_summary['columns'])}
-            - Sample Results: {results_summary['sample_data']}
+            - Column Types: {results_summary['column_types']}
             - Numeric Summary: {results_summary['numeric_summary']}
             {source_context}
             

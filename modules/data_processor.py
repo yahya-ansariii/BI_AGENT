@@ -67,85 +67,50 @@ class DataProcessor:
     
     def load_sample_data(self) -> bool:
         """
-        Load sample business data for demonstration with multiple related tables
+        Load sample business data from demo_data folder Excel files
         
         Returns:
             bool: True if successful, False otherwise
         """
         try:
-            np.random.seed(42)
+            import os
             
-            # Create customers table
-            customers_data = {
-                'Customer_ID': [1001, 1002, 1003, 1004, 1005, 1006, 1007, 1008, 1009, 1010],
-                'Customer_Name': ['John Smith', 'Sarah Johnson', 'Mike Brown', 'Lisa Davis', 'Tom Wilson',
-                                'Emma Taylor', 'David Miller', 'Anna Garcia', 'Chris Anderson', 'Maria Rodriguez'],
-                'Email': ['john@email.com', 'sarah@email.com', 'mike@email.com', 'lisa@email.com', 'tom@email.com',
-                         'emma@email.com', 'david@email.com', 'anna@email.com', 'chris@email.com', 'maria@email.com'],
-                'City': ['New York', 'Los Angeles', 'Chicago', 'Houston', 'Phoenix',
-                        'Philadelphia', 'San Antonio', 'San Diego', 'Dallas', 'San Jose'],
-                'State': ['NY', 'CA', 'IL', 'TX', 'AZ', 'PA', 'TX', 'CA', 'TX', 'CA'],
-                'Customer_Segment': ['Premium', 'Standard', 'Premium', 'Standard', 'Premium',
-                                   'Standard', 'Premium', 'Standard', 'Premium', 'Standard'],
-                'Registration_Date': pd.date_range('2022-01-01', periods=10, freq='30D').strftime('%Y-%m-%d')
-            }
+            # Clear any existing loaded tables to ensure fresh data
+            self.loaded_tables = {}
             
-            # Create products table
-            products_data = {
-                'Product_ID': ['P001', 'P002', 'P003', 'P004', 'P005', 'P006', 'P007', 'P008', 'P009', 'P010'],
-                'Product_Name': ['MacBook Pro', 'iPhone 14', 'iPad Air', 'AirPods Pro', 'Apple Watch',
-                               'Samsung Galaxy', 'Dell Laptop', 'Sony Headphones', 'Canon Camera', 'Nintendo Switch'],
-                'Category': ['Laptop', 'Phone', 'Tablet', 'Accessories', 'Wearables',
-                           'Phone', 'Laptop', 'Accessories', 'Camera', 'Gaming'],
-                'Brand': ['Apple', 'Apple', 'Apple', 'Apple', 'Apple',
-                         'Samsung', 'Dell', 'Sony', 'Canon', 'Nintendo'],
-                'Unit_Price': [1999.99, 999.99, 599.99, 249.99, 399.99,
-                             899.99, 1299.99, 199.99, 799.99, 299.99],
-                'Cost': [1200.00, 600.00, 350.00, 150.00, 200.00,
-                       550.00, 800.00, 120.00, 500.00, 180.00],
-                'Stock_Quantity': [50, 200, 150, 300, 100, 180, 75, 250, 60, 120]
-            }
+            # Path to demo_data folder
+            demo_data_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'demo_data')
             
-            # Create sales table with relationships
-            n_sales = 500
-            sales_data = {
-                'Sale_ID': [f'S{i+1:04d}' for i in range(n_sales)],
-                'Customer_ID': np.random.choice(customers_data['Customer_ID'], n_sales),
-                'Product_ID': np.random.choice(products_data['Product_ID'], n_sales),
-                'Sale_Date': pd.date_range('2023-01-01', periods=n_sales, freq='D').strftime('%Y-%m-%d'),
-                'Quantity': np.random.randint(1, 5, n_sales),
-                'Unit_Price': [products_data['Unit_Price'][products_data['Product_ID'].index(pid)] for pid in np.random.choice(products_data['Product_ID'], n_sales)],
-                'Total_Amount': 0,  # Will be calculated
-                'Salesperson': np.random.choice(['Alice Johnson', 'Bob Smith', 'Charlie Brown', 'Diana Wilson', 'Eve Davis'], n_sales),
-                'Region': np.random.choice(['North', 'South', 'East', 'West'], n_sales),
-                'Payment_Method': np.random.choice(['Credit Card', 'Debit Card', 'PayPal', 'Bank Transfer'], n_sales)
-            }
+            # Load sales.xlsx
+            sales_file = os.path.join(demo_data_path, 'sales.xlsx')
+            if os.path.exists(sales_file):
+                sales_df = pd.read_excel(sales_file, sheet_name='Sheet1')
+                self.loaded_tables['sales'] = sales_df
+                print(f"Loaded sales data: {sales_df.shape[0]} rows × {sales_df.shape[1]} columns")
             
-            # Calculate total amount
-            sales_data['Total_Amount'] = [q * p for q, p in zip(sales_data['Quantity'], sales_data['Unit_Price'])]
+            # Load web_traffic.xlsx
+            web_traffic_file = os.path.join(demo_data_path, 'web_traffic.xlsx')
+            if os.path.exists(web_traffic_file):
+                web_traffic_df = pd.read_excel(web_traffic_file, sheet_name='Sheet1')
+                self.loaded_tables['web_traffic'] = web_traffic_df
+                print(f"Loaded web traffic data: {web_traffic_df.shape[0]} rows × {web_traffic_df.shape[1]} columns")
             
-            # Create DataFrames
-            customers_df = pd.DataFrame(customers_data)
-            products_df = pd.DataFrame(products_data)
-            sales_df = pd.DataFrame(sales_data)
+            if not self.loaded_tables:
+                print("No demo data files found in demo_data folder")
+                return False
             
-            # Store multiple tables in a dictionary (to be handled by the calling code)
-            self.loaded_tables = {
-                'customers': customers_df,
-                'products': products_df,
-                'sales': sales_df
-            }
-            
-            # Set the main data processor to the sales table (most comprehensive)
-            self.data = sales_df
-            self.data_name = "Sample Sales Data"
+            # Set the main data to the first available table for backward compatibility
+            first_table = list(self.loaded_tables.keys())[0]
+            self.data = self.loaded_tables[first_table]
+            self.data_name = f"Sample Data ({first_table})"
             self._update_memory_usage()
             self._register_data_in_duckdb()
             
+            print(f"Successfully loaded {len(self.loaded_tables)} sample tables from demo_data folder")
             return True
             
         except Exception as e:
-            print(f"Error loading sample data: {str(e)}")
+            print(f"Error loading sample data from demo_data folder: {str(e)}")
             return False
     
     def _update_memory_usage(self):
