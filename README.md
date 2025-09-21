@@ -36,6 +36,8 @@ A powerful offline business intelligence tool that combines data analysis, visua
 3. **Install and setup Ollama (for AI features)**
    ```bash
    # Install Ollama from https://ollama.ai/
+   # Configure custom model path (optional)
+   python setup_models.py
    # Pull a model (e.g., llama3:8b-instruct)
    ollama pull llama3:8b-instruct
    ```
@@ -49,6 +51,31 @@ A powerful offline business intelligence tool that combines data analysis, visua
    ```bash
    streamlit run app/frontend.py
    ```
+
+## Model Path Configuration
+
+The application supports custom model paths for storing Ollama models:
+
+### **Option 1: Using Setup Script**
+```bash
+python setup_models.py
+```
+This interactive script will help you:
+- Set a custom model path
+- Download recommended models
+- Check your current setup
+
+### **Option 2: Manual Configuration**
+1. Edit `config/model_settings.json` to set your desired path
+2. Start Ollama with custom path:
+   ```bash
+   OLLAMA_MODELS=C:\Your\Custom\Path ollama serve
+   ```
+
+### **Option 3: In the Application**
+1. Open the "Schema Approval" tab
+2. Use the "Model Configuration" section
+3. Set your custom path and check available models
 
 ## Usage
 

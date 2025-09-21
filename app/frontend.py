@@ -120,6 +120,39 @@ def main():
     with tab1:
         st.header("🗂️ Schema Approval")
         
+        # Model Configuration Section
+        st.subheader("🤖 Model Configuration")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            model_path = st.text_input(
+                "Custom Model Path",
+                value="~/Documents/LLM_Models",
+                help="Path where Ollama models will be stored"
+            )
+            
+            if st.button("Set Model Path"):
+                if st.session_state.llm_agent.set_model_path(model_path):
+                    st.success(f"Model path set to: {st.session_state.llm_agent.get_model_path()}")
+                else:
+                    st.error("Failed to set model path")
+        
+        with col2:
+            current_path = st.session_state.llm_agent.get_model_path()
+            st.info(f"Current model path: {current_path}")
+            
+            if st.button("Check Available Models"):
+                models = st.session_state.llm_agent.list_models()
+                if models:
+                    st.write("Available models:")
+                    for model in models:
+                        st.write(f"• {model}")
+                else:
+                    st.warning("No models found or Ollama not running")
+        
+        st.markdown("---")
+        
         # Load demo schema
         if st.button("Load Demo Schema"):
             with st.spinner("Loading demo schema..."):

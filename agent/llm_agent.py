@@ -5,16 +5,40 @@ Handles AI-powered analysis using Ollama via subprocess
 
 import subprocess
 import json
+import os
+import sys
 from typing import Optional, Dict, Any, List
 from datetime import datetime
+from pathlib import Path
+
+# Add parent directory to path for config import
+sys.path.append(str(Path(__file__).parent.parent))
+
+try:
+    from config.ollama_config import ollama_config
+except ImportError:
+    # Fallback if config not available
+    ollama_config = None
 
 class LLMAgent:
     """AI agent for business data analysis using Ollama"""
     
-    def __init__(self):
-        """Initialize the LLM agent"""
+    def __init__(self, model_path: str = None):
+        """
+        Initialize the LLM agent
+        
+        Args:
+            model_path: Custom path for Ollama models (optional)
+        """
         self.model_name = "llama3:8b-instruct"
         self.insights_history = []
+        
+        # Set custom model path if provided
+        if model_path and ollama_config:
+            ollama_config.set_custom_model_path(model_path)
+            print(f"Using custom model path: {ollama_config.get_model_path()}")
+        elif ollama_config:
+            print(f"Using model path: {ollama_config.get_model_path()}")
         
     def query_llm(self, prompt: str, model: str = "llama3:8b-instruct") -> str:
         """
@@ -28,8 +52,14 @@ class LLMAgent:
             str: LLM response
         """
         try:
-            # Prepare the command
-            cmd = ["ollama", "run", model]
+            # Prepare the command with custom model path
+            if ollama_config:
+                cmd = ollama_config.get_ollama_command(model)
+                env = os.environ.copy()
+                env['OLLAMA_MODELS'] = ollama_config.get_model_path()
+            else:
+                cmd = ["ollama", "run", model]
+                env = None
             
             # Run the command with the prompt
             result = subprocess.run(
@@ -37,7 +67,8 @@ class LLMAgent:
                 input=prompt,
                 text=True,
                 capture_output=True,
-                timeout=60
+                timeout=60,
+                env=env
             )
             
             if result.returncode == 0:
@@ -200,3 +231,49 @@ Format your response as a structured analysis with clear sections.
         except Exception as e:
             print(f"Error exporting insights: {str(e)}")
             return False
+    
+    def set_model_path(self, path: str) -> bool:
+        """
+        Set custom model path for Ollama
+        
+        Args:
+            path: Path to store Ollama models
+            
+        Returns:
+            bool: True if path is valid and accessible
+        """
+        if ollama_config:
+            return ollama_config.set_custom_model_path(path)
+        return False
+    
+    def get_model_path(self) -> str:
+        """Get current model path"""
+        if ollama_config:
+            return ollama_config.get_model_path()
+        return "~/.ollama/models"
+    
+    def pull_model(self, model: str) -> bool:
+        """
+        Pull a model to the configured path
+        
+        Args:
+            model: Model name to pull
+            
+        Returns:
+            bool: True if successful
+        """
+        if ollama_config:
+            return ollama_config.pull_model(model)
+        return False
+    
+    def list_models(self) -> list:
+        """Get list of available models"""
+        if ollama_config:
+            return ollama_config.get_available_models()
+        return []
+    
+    def check_model_exists(self, model: str) -> bool:
+        """Check if a model exists"""
+        if ollama_config:
+            return ollama_config.check_model_exists(model)
+        return False
