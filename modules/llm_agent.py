@@ -51,6 +51,10 @@ class LLMAgent:
         self.insights_history = []
         self.ollama_base_url = "http://localhost:11434"
         self.parser = BusinessInsightsParser()
+    
+    def is_initialized(self) -> bool:
+        """Check if the LLM agent is initialized"""
+        return hasattr(self, 'model_name') and self.model_name is not None
         
     def initialize_model(self, model_name: str = "llama2") -> bool:
         """
@@ -328,11 +332,17 @@ Provide specific recommendations for customer engagement and retention.
             {data.head(3).to_dict('records')}
             
             Generate a SQL query that:
-            1. Answers the question accurately
-            2. Uses proper SQL syntax
+            1. Answers the question accurately and directly
+            2. Uses proper SQL syntax for DuckDB
             3. Handles data types correctly
-            4. Includes appropriate WHERE, GROUP BY, ORDER BY clauses as needed
-            5. Uses LIMIT for large result sets
+            4. ONLY includes WHERE clauses if explicitly mentioned in the question
+            5. ONLY includes date filters if the question specifically asks for a date range
+            6. ONLY includes payment method or other filters if explicitly mentioned
+            7. Uses appropriate GROUP BY, ORDER BY, and LIMIT clauses as needed
+            8. Focuses on the core question without adding unnecessary filtering
+            
+            IMPORTANT: Do not add filters that are not explicitly mentioned in the question.
+            If the question asks for "total sales by region", do NOT add payment method or date filters.
             
             Return ONLY the SQL query, no explanations.
             """
@@ -351,6 +361,62 @@ Provide specific recommendations for customer engagement and retention.
             
         except Exception as e:
             return f"SELECT * FROM data LIMIT 10; -- Error generating SQL: {str(e)}"
+
+    def generate_sql_query_with_tables(self, question: str, tables: Dict[str, pd.DataFrame]) -> str:
+        """Generate SQL query from natural language question using multiple tables"""
+        try:
+            # Prepare table information
+            table_info = {}
+            for table_name, df in tables.items():
+                table_info[table_name] = {
+                    'columns': list(df.columns),
+                    'dtypes': {col: str(dtype) for col, dtype in df.dtypes.items()},
+                    'sample_data': df.head(2).to_dict('records'),
+                    'row_count': len(df)
+                }
+            
+            # Create comprehensive SQL generation prompt
+            prompt = f"""
+            You are a SQL expert. Generate a SQL query to answer this business question using the available tables.
+            
+            Question: {question}
+            
+            Available Tables:
+            {json.dumps(table_info, indent=2, default=str)}
+            
+            Instructions:
+            1. Use the ACTUAL table names provided (not generic names like 'data')
+            2. Use the ACTUAL column names from the tables
+            3. Generate a SQL query that answers the question accurately
+            4. Use proper SQL syntax for DuckDB
+            5. Handle data types correctly based on the column types shown
+            6. Use JOINs if the question requires data from multiple tables
+            7. Use appropriate WHERE, GROUP BY, ORDER BY, and LIMIT clauses
+            8. ONLY add filters that are explicitly mentioned in the question
+            9. Focus on the core question without unnecessary filtering
+            
+            Examples of good table usage:
+            - If asking about "sales by product", use the actual table name like "sales" or "products"
+            - If asking about "customer data", use the actual table name like "customers" or "customer_info"
+            - Use actual column names like "product_name", "sales_amount", "customer_id", etc.
+            
+            Return ONLY the SQL query, no explanations.
+            """
+            
+            # Call Ollama API
+            response = self._call_ollama_api(prompt)
+            
+            # Clean up the response to extract just the SQL
+            sql_query = response.strip()
+            if '```sql' in sql_query:
+                sql_query = sql_query.split('```sql')[1].split('```')[0].strip()
+            elif '```' in sql_query:
+                sql_query = sql_query.split('```')[1].split('```')[0].strip()
+            
+            return sql_query
+            
+        except Exception as e:
+            return f"-- Error generating SQL query: {str(e)}"
     
     def get_quick_sql_insights(self, data: pd.DataFrame) -> str:
         """Generate quick SQL insights for the data"""
@@ -379,6 +445,59 @@ Provide specific recommendations for customer engagement and retention.
         except Exception as e:
             return f"-- Error generating SQL insights: {str(e)}"
     
+    def detect_relationships(self, tables: Dict[str, pd.DataFrame]) -> List[Dict]:
+        """Detect potential relationships between tables using AI"""
+        try:
+            # Prepare table information
+            table_info = {}
+            for table_name, df in tables.items():
+                table_info[table_name] = {
+                    'columns': list(df.columns),
+                    'sample_data': df.head(2).to_dict('records'),
+                    'dtypes': {col: str(dtype) for col, dtype in df.dtypes.items()}
+                }
+            
+            # Create relationship detection prompt
+            prompt = f"""
+            Analyze these database tables and suggest potential relationships between them.
+            
+            Tables:
+            {json.dumps(table_info, indent=2)}
+            
+            Based on column names, data types, and sample data, suggest relationships in this format:
+            [
+                {{
+                    "source_table": "table1",
+                    "target_table": "table2", 
+                    "source_column": "id",
+                    "target_column": "table1_id",
+                    "relationship_type": "One-to-Many",
+                    "confidence": "High"
+                }}
+            ]
+            
+            Look for:
+            - Primary key to foreign key relationships (id, _id, _key columns)
+            - Common naming patterns (customer_id, product_id, etc.)
+            - Data type compatibility
+            - Logical business relationships
+            
+            Return only valid JSON array, no other text.
+            """
+            
+            response = self._call_ollama_api(prompt)
+            
+            # Parse JSON response
+            try:
+                relationships = json.loads(response)
+                return relationships if isinstance(relationships, list) else []
+            except json.JSONDecodeError:
+                return []
+                
+        except Exception as e:
+            print(f"Error detecting relationships: {str(e)}")
+            return []
+
     def analyze_query_results(self, question: str, results: pd.DataFrame, source_tables: Dict = None) -> str:
         """Analyze SQL query results and provide enhanced insights using source tables"""
         try:

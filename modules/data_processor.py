@@ -20,6 +20,7 @@ class DataProcessor:
         self.data = None
         self.data_name = None
         self.memory_usage = 0
+        self.loaded_tables = {}
         
     def load_excel_data(self, file_upload) -> bool:
         """
@@ -128,13 +129,12 @@ class DataProcessor:
             products_df = pd.DataFrame(products_data)
             sales_df = pd.DataFrame(sales_data)
             
-            # Store in session state as multiple tables
-            if 'loaded_tables' not in st.session_state:
-                st.session_state.loaded_tables = {}
-            
-            st.session_state.loaded_tables['customers'] = customers_df
-            st.session_state.loaded_tables['products'] = products_df
-            st.session_state.loaded_tables['sales'] = sales_df
+            # Store multiple tables in a dictionary (to be handled by the calling code)
+            self.loaded_tables = {
+                'customers': customers_df,
+                'products': products_df,
+                'sales': sales_df
+            }
             
             # Set the main data processor to the sales table (most comprehensive)
             self.data = sales_df
@@ -165,6 +165,10 @@ class DataProcessor:
     def get_data(self) -> pd.DataFrame:
         """Get the current data"""
         return self.data if self.data is not None else pd.DataFrame()
+    
+    def get_loaded_tables(self) -> Dict[str, pd.DataFrame]:
+        """Get all loaded tables"""
+        return self.loaded_tables
     
     def get_data_preview(self, rows: int = 10, columns: List[str] = None) -> pd.DataFrame:
         """
@@ -332,6 +336,16 @@ class DataProcessor:
             })
         
         return info
+    
+    def clear_data(self):
+        """Clear all data and reset the processor"""
+        self.data = None
+        self.data_name = None
+        self.memory_usage = 0
+        self.loaded_tables = {}
+        if self.conn:
+            self.conn.close()
+        self.conn = duckdb.connect(':memory:')
     
     def close(self):
         """Close DuckDB connection"""
