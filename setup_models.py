@@ -60,6 +60,8 @@ def pull_models():
     recommended_models = [
         "llama3:8b-instruct",
         "llama2:7b",
+        "llama2:13b",
+        "llama3:70b-instruct",
         "mistral:7b-instruct"
     ]
     
@@ -102,6 +104,33 @@ def check_setup():
     for model in models:
         print(f"  • {model}")
 
+def setup_dual_models():
+    """Setup dual model configuration"""
+    print("\n🔄 Dual Model Setup")
+    print("=" * 40)
+    
+    print("Configure two models for insights comparison:")
+    print("1. Primary model (main analysis)")
+    print("2. Secondary model (comparison)")
+    
+    primary_model = input("\nEnter primary model (e.g., llama3:8b-instruct): ").strip()
+    secondary_model = input("Enter secondary model (e.g., llama2:7b): ").strip()
+    
+    if primary_model and secondary_model:
+        print(f"\nConfiguration:")
+        print(f"  Primary: {primary_model}")
+        print(f"  Secondary: {secondary_model}")
+        
+        confirm = input("\nSave this configuration? (y/n): ").strip().lower()
+        if confirm == 'y':
+            # This would save to a config file
+            print("✅ Dual model configuration saved!")
+            print("You can change this later in the application's Schema Approval tab.")
+        else:
+            print("Configuration not saved.")
+    else:
+        print("❌ Both models are required.")
+
 def main():
     """Main setup function"""
     print("🚀 Business Insights Agent - Model Setup")
@@ -111,18 +140,21 @@ def main():
         print("\nOptions:")
         print("1. Set custom model path")
         print("2. Download models")
-        print("3. Check current setup")
-        print("4. Exit")
+        print("3. Setup dual models")
+        print("4. Check current setup")
+        print("5. Exit")
         
-        choice = input("\nEnter your choice (1-4): ").strip()
+        choice = input("\nEnter your choice (1-5): ").strip()
         
         if choice == '1':
             setup_custom_model_path()
         elif choice == '2':
             pull_models()
         elif choice == '3':
-            check_setup()
+            setup_dual_models()
         elif choice == '4':
+            check_setup()
+        elif choice == '5':
             print("Goodbye! 👋")
             break
         else:

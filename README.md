@@ -63,6 +63,7 @@ python setup_models.py
 This interactive script will help you:
 - Set a custom model path
 - Download recommended models
+- Setup dual model configuration
 - Check your current setup
 
 ### **Option 2: Manual Configuration**
@@ -76,6 +77,27 @@ This interactive script will help you:
 1. Open the "Schema Approval" tab
 2. Use the "Model Configuration" section
 3. Set your custom path and check available models
+4. Configure dual models for insights comparison
+
+## Dual Model Insights
+
+The application supports comparing insights from two different Llama models:
+
+### **Features:**
+- **Side-by-side comparison** of insights from two models
+- **Model performance metrics** (response length, detail level)
+- **Configurable model selection** (llama3, llama2, mistral, etc.)
+- **Real-time model switching** in the application
+
+### **Setup:**
+1. Download multiple models: `ollama pull llama3:8b-instruct llama2:7b`
+2. Configure in the app's "Schema Approval" tab
+3. Ask questions and see both models' insights side by side
+
+### **Example Models:**
+- **Primary**: `llama3:8b-instruct` (detailed analysis)
+- **Secondary**: `llama2:7b` (concise insights)
+- **Alternative**: `mistral:7b-instruct` (different perspective)
 
 ## Usage
 
@@ -97,9 +119,11 @@ This interactive script will help you:
 
 ### 3. AI-Powered Analysis
 - Natural language to SQL conversion
+- **Dual model insights comparison** - Compare insights from two different Llama models
 - Automated insights generation
 - Business recommendations based on data patterns
 - Data quality assessment
+- Model performance comparison
 
 ### 4. Visualization
 - Automatic chart generation based on data types

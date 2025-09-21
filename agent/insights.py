@@ -10,13 +10,16 @@ from .llm_agent import LLMAgent
 class InsightsGenerator:
     """Generates business insights from query results"""
     
-    def __init__(self):
-        """Initialize insights generator"""
-        self.llm_agent = LLMAgent()
+    def __init__(self, primary_model="llama3:8b-instruct", secondary_model="llama2:7b"):
+        """Initialize insights generator with two models"""
+        self.primary_llm_agent = LLMAgent()
+        self.secondary_llm_agent = LLMAgent()
+        self.primary_model = primary_model
+        self.secondary_model = secondary_model
     
-    def generate_insights(self, question: str, sql: str, result_df: pd.DataFrame) -> str:
+    def generate_insights(self, question: str, sql: str, result_df: pd.DataFrame) -> Dict[str, str]:
         """
-        Generate insights from query results
+        Generate insights from query results using two different models
         
         Args:
             question: Original natural language question
@@ -24,7 +27,7 @@ class InsightsGenerator:
             result_df: DataFrame with query results
             
         Returns:
-            str: Generated insights and recommendations
+            Dict[str, str]: Generated insights from both models
         """
         try:
             # Prepare data summary
@@ -33,13 +36,33 @@ class InsightsGenerator:
             # Create prompt
             prompt = self._create_insights_prompt(question, sql, data_summary)
             
-            # Query LLM for insights
-            response = self.llm_agent.query_llm(prompt)
+            # Query both LLMs for insights
+            primary_response = self.primary_llm_agent.query_llm(prompt, self.primary_model)
+            secondary_response = self.secondary_llm_agent.query_llm(prompt, self.secondary_model)
             
-            return response
+            return {
+                "primary_model": {
+                    "model_name": self.primary_model,
+                    "insights": primary_response
+                },
+                "secondary_model": {
+                    "model_name": self.secondary_model,
+                    "insights": secondary_response
+                }
+            }
             
         except Exception as e:
-            return f"Error generating insights: {str(e)}"
+            error_msg = f"Error generating insights: {str(e)}"
+            return {
+                "primary_model": {
+                    "model_name": self.primary_model,
+                    "insights": error_msg
+                },
+                "secondary_model": {
+                    "model_name": self.secondary_model,
+                    "insights": error_msg
+                }
+            }
     
     def _prepare_result_summary(self, result_df: pd.DataFrame) -> Dict[str, Any]:
         """Prepare summary of query results"""
@@ -253,3 +276,23 @@ Insights:"""
             assessment["overall_score"] = 0
         
         return assessment
+    
+    def set_models(self, primary_model: str, secondary_model: str):
+        """
+        Set the models to use for insights generation
+        
+        Args:
+            primary_model: Primary model name
+            secondary_model: Secondary model name
+        """
+        self.primary_model = primary_model
+        self.secondary_model = secondary_model
+    
+    def get_available_models(self) -> List[str]:
+        """Get list of available models from both agents"""
+        primary_models = self.primary_llm_agent.list_models()
+        secondary_models = self.secondary_llm_agent.list_models()
+        
+        # Combine and deduplicate
+        all_models = list(set(primary_models + secondary_models))
+        return all_models

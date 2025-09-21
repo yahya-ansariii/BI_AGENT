@@ -407,6 +407,35 @@ def main():
                 else:
                     st.warning("No models found or Ollama not running")
         
+        # Dual Model Configuration
+        st.subheader("🔄 Dual Model Configuration")
+        st.write("Configure two different models for insights comparison:")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            primary_model = st.selectbox(
+                "Primary Model",
+                options=["llama3:8b-instruct", "llama3:70b-instruct", "llama2:7b", "llama2:13b", "mistral:7b-instruct"],
+                index=0,
+                help="Primary model for insights generation"
+            )
+        
+        with col2:
+            secondary_model = st.selectbox(
+                "Secondary Model", 
+                options=["llama2:7b", "llama2:13b", "llama3:8b-instruct", "llama3:70b-instruct", "mistral:7b-instruct"],
+                index=1,
+                help="Secondary model for insights comparison"
+            )
+        
+        if st.button("Set Dual Models"):
+            st.session_state.insights_generator.set_models(primary_model, secondary_model)
+            st.success(f"Models set: {primary_model} (Primary) & {secondary_model} (Secondary)")
+        
+        # Show current model configuration
+        st.info(f"Current configuration: {st.session_state.insights_generator.primary_model} (Primary) & {st.session_state.insights_generator.secondary_model} (Secondary)")
+        
         st.markdown("---")
         
         # Load demo schema
@@ -590,12 +619,63 @@ def main():
                             if result_df is not None and not result_df.empty:
                                 st.dataframe(result_df, use_container_width=True)
                                 
-                                # Generate insights
-                                st.subheader("Insights")
-                                insights = st.session_state.insights_generator.generate_insights(
-                                    question, sql, result_df
-                                )
-                                st.write(insights)
+                                # Generate insights from both models
+                                st.subheader("AI Insights Comparison")
+                                
+                                with st.spinner("Generating insights from both models..."):
+                                    insights = st.session_state.insights_generator.generate_insights(
+                                        question, sql, result_df
+                                    )
+                                
+                                # Display insights side by side
+                                col1, col2 = st.columns(2)
+                                
+                                with col1:
+                                    st.subheader(f"🤖 {insights['primary_model']['model_name']}")
+                                    st.write(insights['primary_model']['insights'])
+                                
+                                with col2:
+                                    st.subheader(f"🤖 {insights['secondary_model']['model_name']}")
+                                    st.write(insights['secondary_model']['insights'])
+                                
+                                # Model comparison
+                                st.subheader("📊 Model Comparison")
+                                
+                                comparison_col1, comparison_col2, comparison_col3 = st.columns(3)
+                                
+                                with comparison_col1:
+                                    st.metric(
+                                        "Primary Model", 
+                                        insights['primary_model']['model_name'],
+                                        help="Main model for analysis"
+                                    )
+                                
+                                with comparison_col2:
+                                    st.metric(
+                                        "Secondary Model", 
+                                        insights['secondary_model']['model_name'],
+                                        help="Comparison model for analysis"
+                                    )
+                                
+                                with comparison_col3:
+                                    # Calculate response length difference
+                                    primary_length = len(insights['primary_model']['insights'])
+                                    secondary_length = len(insights['secondary_model']['insights'])
+                                    length_diff = abs(primary_length - secondary_length)
+                                    
+                                    st.metric(
+                                        "Response Length Diff", 
+                                        f"{length_diff} chars",
+                                        help="Difference in response length"
+                                    )
+                                
+                                # Show which model provided more detailed insights
+                                if primary_length > secondary_length:
+                                    st.info(f"💡 {insights['primary_model']['model_name']} provided more detailed insights ({primary_length} vs {secondary_length} characters)")
+                                elif secondary_length > primary_length:
+                                    st.info(f"💡 {insights['secondary_model']['model_name']} provided more detailed insights ({secondary_length} vs {primary_length} characters)")
+                                else:
+                                    st.info("📝 Both models provided similar length responses")
                                 
                                 # Generate chart
                                 st.subheader("Visualization")
