@@ -101,7 +101,7 @@ class ExcelConnector:
             engine = self.engine_map.get(file_path.suffix.lower(), 'openpyxl')
             
             read_params = {
-                'filepath_or_buffer': file_path,
+                'io': file_path,
                 'engine': engine,
                 'header': header_row,
                 'nrows': nrows
