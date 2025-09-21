@@ -296,3 +296,27 @@ Insights:"""
         # Combine and deduplicate
         all_models = list(set(primary_models + secondary_models))
         return all_models
+    
+    def get_model_info(self, model_name: str) -> Dict[str, Any]:
+        """Get detailed information about a specific model"""
+        return self.primary_llm_agent.get_model_info(model_name)
+    
+    def validate_models(self) -> Dict[str, Any]:
+        """Validate that both models are available"""
+        primary_exists = self.primary_llm_agent.check_model_exists(self.primary_model)
+        secondary_exists = self.secondary_llm_agent.check_model_exists(self.secondary_model)
+        
+        return {
+            "primary_model": {
+                "name": self.primary_model,
+                "exists": primary_exists,
+                "info": self.get_model_info(self.primary_model)
+            },
+            "secondary_model": {
+                "name": self.secondary_model,
+                "exists": secondary_exists,
+                "info": self.get_model_info(self.secondary_model)
+            },
+            "both_available": primary_exists and secondary_exists,
+            "available_models": self.get_available_models()
+        }

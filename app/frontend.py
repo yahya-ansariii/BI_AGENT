@@ -6,6 +6,7 @@ Streamlit interface for Business Insights Agent
 import streamlit as st
 import pandas as pd
 import json
+import os
 import plotly.express as px
 import plotly.graph_objects as go
 from pathlib import Path
@@ -409,32 +410,121 @@ def main():
         
         # Dual Model Configuration
         st.subheader("🔄 Dual Model Configuration")
-        st.write("Configure two different models for insights comparison:")
         
-        col1, col2 = st.columns(2)
+        # Check available models
+        available_models = st.session_state.insights_generator.get_available_models()
         
-        with col1:
-            primary_model = st.selectbox(
-                "Primary Model",
-                options=["llama3:8b-instruct", "llama3:70b-instruct", "llama2:7b", "llama2:13b", "mistral:7b-instruct"],
-                index=0,
-                help="Primary model for insights generation"
-            )
-        
-        with col2:
-            secondary_model = st.selectbox(
-                "Secondary Model", 
-                options=["llama2:7b", "llama2:13b", "llama3:8b-instruct", "llama3:70b-instruct", "mistral:7b-instruct"],
-                index=1,
-                help="Secondary model for insights comparison"
-            )
-        
-        if st.button("Set Dual Models"):
-            st.session_state.insights_generator.set_models(primary_model, secondary_model)
-            st.success(f"Models set: {primary_model} (Primary) & {secondary_model} (Secondary)")
-        
-        # Show current model configuration
-        st.info(f"Current configuration: {st.session_state.insights_generator.primary_model} (Primary) & {st.session_state.insights_generator.secondary_model} (Secondary)")
+        if not available_models:
+            st.error("❌ No models found in your configured folder!")
+            st.warning("Please download at least one model to use the application.")
+            
+            # Model download section
+            st.subheader("📥 Download Models")
+            st.write("Download recommended models to get started:")
+            
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                if st.button("Download llama3:8b-instruct", help="Fast, efficient model"):
+                    with st.spinner("Downloading llama3:8b-instruct..."):
+                        success = st.session_state.llm_agent.pull_model("llama3:8b-instruct")
+                        if success:
+                            st.success("✅ Downloaded successfully!")
+                            st.rerun()
+                        else:
+                            st.error("❌ Download failed")
+            
+            with col2:
+                if st.button("Download llama2:7b", help="Reliable, smaller model"):
+                    with st.spinner("Downloading llama2:7b..."):
+                        success = st.session_state.llm_agent.pull_model("llama2:7b")
+                        if success:
+                            st.success("✅ Downloaded successfully!")
+                            st.rerun()
+                        else:
+                            st.error("❌ Download failed")
+            
+            with col3:
+                if st.button("Download mistral:7b-instruct", help="Alternative model"):
+                    with st.spinner("Downloading mistral:7b-instruct..."):
+                        success = st.session_state.llm_agent.pull_model("mistral:7b-instruct")
+                        if success:
+                            st.success("✅ Downloaded successfully!")
+                            st.rerun()
+                        else:
+                            st.error("❌ Download failed")
+            
+            st.info("💡 After downloading, refresh the page to see available models.")
+            
+        else:
+            st.success(f"✅ Found {len(available_models)} available models")
+            
+            # Show available models
+            with st.expander("📋 Available Models", expanded=False):
+                for model in available_models:
+                    model_info = st.session_state.insights_generator.get_model_info(model)
+                    col1, col2, col3 = st.columns([3, 2, 1])
+                    with col1:
+                        st.write(f"**{model}**")
+                    with col2:
+                        st.write(f"Size: {model_info.get('size', 'Unknown')}")
+                    with col3:
+                        status = "✅" if model_info.get('exists', False) else "❌"
+                        st.write(status)
+            
+            # Model selection
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                primary_model = st.selectbox(
+                    "Primary Model",
+                    options=available_models,
+                    index=0 if available_models else 0,
+                    help="Primary model for insights generation"
+                )
+            
+            with col2:
+                # Filter out primary model from secondary options
+                secondary_options = [m for m in available_models if m != primary_model]
+                if not secondary_options:
+                    secondary_options = available_models  # Fallback if only one model
+                
+                secondary_model = st.selectbox(
+                    "Secondary Model", 
+                    options=secondary_options,
+                    index=0 if secondary_options else 0,
+                    help="Secondary model for insights comparison"
+                )
+            
+            if st.button("Set Dual Models"):
+                st.session_state.insights_generator.set_models(primary_model, secondary_model)
+                st.success(f"Models set: {primary_model} (Primary) & {secondary_model} (Secondary)")
+            
+            # Show current model configuration
+            current_config = st.session_state.insights_generator.validate_models()
+            if current_config['both_available']:
+                st.success(f"✅ Current configuration: {primary_model} (Primary) & {secondary_model} (Secondary)")
+            else:
+                st.warning("⚠️ Some models are not available. Please check your model folder.")
+            
+            # Model validation details
+            with st.expander("🔍 Model Validation Details", expanded=False):
+                primary_info = current_config['primary_model']
+                secondary_info = current_config['secondary_model']
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.write("**Primary Model:**")
+                    st.write(f"Name: {primary_info['name']}")
+                    st.write(f"Status: {'✅ Available' if primary_info['exists'] else '❌ Not Found'}")
+                    st.write(f"Size: {primary_info['info'].get('size', 'Unknown')}")
+                
+                with col2:
+                    st.write("**Secondary Model:**")
+                    st.write(f"Name: {secondary_info['name']}")
+                    st.write(f"Status: {'✅ Available' if secondary_info['exists'] else '❌ Not Found'}")
+                    st.write(f"Size: {secondary_info['info'].get('size', 'Unknown')}")
         
         st.markdown("---")
         
@@ -567,6 +657,30 @@ def main():
         
         if st.button("Generate Analysis", type="primary"):
             if question:
+                # Check if models are available
+                model_validation = st.session_state.insights_generator.validate_models()
+                if not model_validation['both_available']:
+                    st.error("❌ Required models are not available!")
+                    st.warning("Please configure and download models in the 'Schema Approval' tab first.")
+                    
+                    # Show which models are missing
+                    missing_models = []
+                    if not model_validation['primary_model']['exists']:
+                        missing_models.append(f"Primary: {model_validation['primary_model']['name']}")
+                    if not model_validation['secondary_model']['exists']:
+                        missing_models.append(f"Secondary: {model_validation['secondary_model']['name']}")
+                    
+                    st.error(f"Missing models: {', '.join(missing_models)}")
+                    
+                    # Show available models
+                    available_models = model_validation['available_models']
+                    if available_models:
+                        st.info(f"Available models: {', '.join(available_models)}")
+                    else:
+                        st.error("No models found in your configured folder!")
+                    
+                    return
+                
                 with st.spinner("Generating analysis..."):
                     try:
                         # Generate SQL

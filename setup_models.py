@@ -95,14 +95,34 @@ def check_setup():
     
     llm_agent = LLMAgent()
     
-    print(f"Model path: {llm_agent.get_model_path()}")
-    print(f"Path exists: {os.path.exists(llm_agent.get_model_path())}")
-    print(f"Path writable: {os.access(llm_agent.get_model_path(), os.W_OK)}")
+    model_path = llm_agent.get_model_path()
+    print(f"Model path: {model_path}")
+    print(f"Path exists: {os.path.exists(model_path)}")
+    print(f"Path writable: {os.access(model_path, os.W_OK)}")
     
     models = llm_agent.list_models()
     print(f"Available models: {len(models)}")
+    
+    if not models:
+        print("❌ No models found!")
+        print("Please download at least one model to use the application.")
+        print("\nRecommended models to download:")
+        print("  • llama3:8b-instruct (fast, efficient)")
+        print("  • llama2:7b (reliable, smaller)")
+        print("  • mistral:7b-instruct (alternative)")
+        return
+    
     for model in models:
-        print(f"  • {model}")
+        model_info = llm_agent.get_model_info(model)
+        status = "✅" if model_info.get('exists', False) else "❌"
+        size = model_info.get('size', 'Unknown')
+        print(f"  {status} {model} ({size})")
+    
+    # Check if we have at least 2 models for dual insights
+    if len(models) >= 2:
+        print("\n✅ Sufficient models for dual insights comparison")
+    else:
+        print("\n⚠️  Only one model available. Download another for dual insights comparison.")
 
 def setup_dual_models():
     """Setup dual model configuration"""

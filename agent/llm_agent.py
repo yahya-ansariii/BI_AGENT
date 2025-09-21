@@ -277,3 +277,47 @@ Format your response as a structured analysis with clear sections.
         if ollama_config:
             return ollama_config.check_model_exists(model)
         return False
+    
+    def get_model_info(self, model_name: str) -> Dict[str, Any]:
+        """Get detailed information about a specific model"""
+        try:
+            # Check if model exists
+            exists = self.check_model_exists(model_name)
+            if not exists:
+                return {
+                    "name": model_name,
+                    "exists": False,
+                    "size": "Unknown",
+                    "status": "Not found"
+                }
+            
+            # Get model size and other info
+            model_path = self.get_model_path()
+            model_file = os.path.join(model_path, model_name)
+            
+            size = "Unknown"
+            if os.path.exists(model_file):
+                if os.path.isfile(model_file):
+                    size = f"{os.path.getsize(model_file) / (1024*1024*1024):.2f} GB"
+                elif os.path.isdir(model_file):
+                    total_size = 0
+                    for dirpath, dirnames, filenames in os.walk(model_file):
+                        for filename in filenames:
+                            filepath = os.path.join(dirpath, filename)
+                            total_size += os.path.getsize(filepath)
+                    size = f"{total_size / (1024*1024*1024):.2f} GB"
+            
+            return {
+                "name": model_name,
+                "exists": True,
+                "size": size,
+                "status": "Available",
+                "path": model_file
+            }
+        except Exception as e:
+            return {
+                "name": model_name,
+                "exists": False,
+                "size": "Unknown",
+                "status": f"Error: {str(e)}"
+            }
