@@ -399,6 +399,55 @@ def get_available_models():
         st.error(f"Error getting available models: {str(e)}")
         return []
 
+def get_recommended_models():
+    """Get list of recommended models for download"""
+    return [
+        "llama3:8b-instruct",
+        "llama3.2:3b-instruct", 
+        "llama3.2:1b-instruct",
+        "codellama:7b-instruct",
+        "codellama:13b-instruct",
+        "mistral:7b-instruct",
+        "phi3:3.8b-instruct",
+        "deepseek-r1:8b",
+        "qwen2.5:7b-instruct",
+        "gemma2:9b-instruct"
+    ]
+
+def get_missing_models():
+    """Get list of recommended models that are not currently available"""
+    available = get_available_models()
+    recommended = get_recommended_models()
+    return [model for model in recommended if model not in available]
+
+def generate_download_commands(models):
+    """Generate download commands for the specified models"""
+    if not models:
+        return []
+    
+    commands = []
+    for model in models:
+        commands.append(f"ollama pull {model}")
+    
+    return commands
+
+def test_model_detection():
+    """Test model detection and return status"""
+    try:
+        available_models = get_available_models()
+        return {
+            "status": "success",
+            "models_found": len(available_models),
+            "models": available_models,
+            "ollama_available": OLLAMA_AVAILABLE
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e),
+            "ollama_available": OLLAMA_AVAILABLE
+        }
+
 def download_model(model_name: str):
     """Download an Ollama model"""
     with st.spinner(f"Downloading {model_name}..."):
@@ -442,12 +491,40 @@ def safe_dataframe_display(df, width='stretch'):
         # Fallback: display as text
         st.text(str(df.head()))
 
+def sanitize_name(name: str) -> str:
+    """Sanitize table/column name for SQL compatibility by replacing spaces with underscores"""
+    if not name:
+        return name
+    
+    # Replace spaces with underscores
+    sanitized = name.strip().replace(' ', '_')
+    
+    # Remove any other problematic characters
+    sanitized = re.sub(r'[^a-zA-Z0-9_]', '_', sanitized)
+    
+    # Ensure it starts with letter or underscore
+    if sanitized and not re.match(r'^[a-zA-Z_]', sanitized):
+        sanitized = f"_{sanitized}"
+    
+    # Remove consecutive underscores
+    sanitized = re.sub(r'_+', '_', sanitized)
+    
+    # Remove leading/trailing underscores
+    sanitized = sanitized.strip('_')
+    
+    return sanitized
+
 def validate_table_name(name: str) -> Tuple[bool, str]:
     """Validate table name for SQL compatibility"""
     if not name or not name.strip():
         return False, "Table name cannot be empty"
     
     name = name.strip()
+    
+    # Check for spaces and suggest sanitization
+    if ' ' in name:
+        sanitized = sanitize_name(name)
+        return False, f"Table name cannot contain spaces. Use '{sanitized}' instead"
     
     # Check for SQL reserved words
     sql_reserved = {
@@ -472,6 +549,42 @@ def validate_table_name(name: str) -> Tuple[bool, str]:
         return False, "Table name must be 128 characters or less"
     
     return True, "Valid table name"
+
+def validate_column_name(name: str) -> Tuple[bool, str]:
+    """Validate column name for SQL compatibility"""
+    if not name or not name.strip():
+        return False, "Column name cannot be empty"
+    
+    name = name.strip()
+    
+    # Check for spaces and suggest sanitization
+    if ' ' in name:
+        sanitized = sanitize_name(name)
+        return False, f"Column name cannot contain spaces. Use '{sanitized}' instead"
+    
+    # Check for SQL reserved words
+    sql_reserved = {
+        'select', 'from', 'where', 'insert', 'update', 'delete', 'create', 'drop', 'alter',
+        'table', 'database', 'index', 'view', 'procedure', 'function', 'trigger', 'constraint',
+        'primary', 'foreign', 'key', 'unique', 'check', 'default', 'null', 'not', 'and', 'or',
+        'as', 'in', 'like', 'between', 'is', 'exists', 'all', 'any', 'some', 'union', 'intersect',
+        'except', 'order', 'group', 'having', 'limit', 'offset', 'distinct', 'top', 'case',
+        'when', 'then', 'else', 'end', 'if', 'while', 'for', 'do', 'begin', 'end', 'return',
+        'break', 'continue', 'goto', 'declare', 'set', 'exec', 'execute', 'sp_', 'xp_'
+    }
+    
+    if name.lower() in sql_reserved:
+        return False, f"'{name}' is a SQL reserved word"
+    
+    # Check for valid characters (alphanumeric and underscore only)
+    if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', name):
+        return False, "Column name must start with letter or underscore and contain only letters, numbers, and underscores"
+    
+    # Check length
+    if len(name) > 128:
+        return False, "Column name must be 128 characters or less"
+    
+    return True, "Valid column name"
 
 def check_duplicate_table_name(name: str, existing_tables: Dict) -> Tuple[bool, str]:
     """Check if table name already exists"""
@@ -915,18 +1028,6 @@ def generate_word_report(insight_data: Dict) -> bytes:
     buffer.seek(0)
     return buffer.getvalue()
 
-def get_available_models():
-    """Get list of available Ollama models"""
-    try:
-        if OLLAMA_AVAILABLE and ollama_config:
-            # This would typically make an API call to Ollama
-            # For now, return a placeholder list
-            return ["llama2", "codellama", "mistral", "phi3"]
-        else:
-            return []
-    except Exception as e:
-        print(f"Error getting available models: {str(e)}")
-        return []
 
 def handle_tab_navigation():
     """Handle tab navigation requests"""
@@ -934,19 +1035,57 @@ def handle_tab_navigation():
         tab_name = st.session_state.navigate_to_tab
         st.session_state.navigate_to_tab = None  # Reset after use
         
-        # Show notification for the target tab
-        if tab_name == "explorer":
-            st.success("🔍 **Navigating to Explorer tab** - Click on the '🔍 Explorer' tab above to analyze your data")
+        # Show prominent notification for the target tab with better styling
+        if tab_name == "data_load":
+            st.markdown("""
+            <div style="background-color: #e3f2fd; border: 2px solid #2196f3; border-radius: 10px; padding: 15px; margin: 10px 0;">
+                <h3 style="color: #1976d2; margin: 0;">📁 Navigate to Data Load!</h3>
+                <p style="margin: 5px 0 0 0; color: #424242;">Click on the <strong>'📁 Data Load'</strong> tab above to load your data</p>
+            </div>
+            """, unsafe_allow_html=True)
+        elif tab_name == "explorer":
+            st.markdown("""
+            <div style="background-color: #e8f5e8; border: 2px solid #4caf50; border-radius: 10px; padding: 15px; margin: 10px 0;">
+                <h3 style="color: #388e3c; margin: 0;">🔍 Navigate to Explorer!</h3>
+                <p style="margin: 5px 0 0 0; color: #424242;">Click on the <strong>'🔍 Explorer'</strong> tab above to analyze your data</p>
+            </div>
+            """, unsafe_allow_html=True)
         elif tab_name == "relationships":
-            st.success("🔗 **Navigating to Relationships tab** - Click on the '🔗 Relationships' tab above to connect your tables")
+            st.markdown("""
+            <div style="background-color: #fff3e0; border: 2px solid #ff9800; border-radius: 10px; padding: 15px; margin: 10px 0;">
+                <h3 style="color: #f57c00; margin: 0;">🔗 Navigate to Relationships!</h3>
+                <p style="margin: 5px 0 0 0; color: #424242;">Click on the <strong>'🔗 Relationships'</strong> tab above to define relationships</p>
+            </div>
+            """, unsafe_allow_html=True)
         elif tab_name == "queries":
-            st.success("💻 **Navigating to Custom Queries tab** - Click on the '💻 Custom Queries' tab above to write SQL")
+            st.markdown("""
+            <div style="background-color: #f3e5f5; border: 2px solid #9c27b0; border-radius: 10px; padding: 15px; margin: 10px 0;">
+                <h3 style="color: #7b1fa2; margin: 0;">💻 Navigate to Custom Queries!</h3>
+                <p style="margin: 5px 0 0 0; color: #424242;">Click on the <strong>'💻 Custom Queries'</strong> tab above to create custom queries</p>
+            </div>
+            """, unsafe_allow_html=True)
         elif tab_name == "ai":
-            st.success("🤖 **Navigating to AI Analysis tab** - Click on the '🤖 AI Analysis' tab above for intelligent insights")
+            st.markdown("""
+            <div style="background-color: #e1f5fe; border: 2px solid #00bcd4; border-radius: 10px; padding: 15px; margin: 10px 0;">
+                <h3 style="color: #0097a7; margin: 0;">🤖 Navigate to AI Analysis!</h3>
+                <p style="margin: 5px 0 0 0; color: #424242;">Click on the <strong>'🤖 AI Analysis'</strong> tab above for intelligent insights</p>
+            </div>
+            """, unsafe_allow_html=True)
         elif tab_name == "settings":
-            st.success("⚙️ **Navigating to Settings tab** - Click on the '⚙️ Settings' tab above to configure the system")
+            st.markdown("""
+            <div style="background-color: #fce4ec; border: 2px solid #e91e63; border-radius: 10px; padding: 15px; margin: 10px 0;">
+                <h3 style="color: #c2185b; margin: 0;">⚙️ Navigate to Settings!</h3>
+                <p style="margin: 5px 0 0 0; color: #424242;">Click on the <strong>'⚙️ Settings'</strong> tab above to configure the system</p>
+            </div>
+            """, unsafe_allow_html=True)
         elif tab_name == "insights":
-            st.success("📄 **Navigating to Insights tab** - Click on the '🤖 AI Analysis' tab above to view generated insights")
+            st.markdown("""
+            <div style="background-color: #e8f5e8; border: 2px solid #4caf50; border-radius: 10px; padding: 15px; margin: 10px 0;">
+                <h3 style="color: #388e3c; margin: 0;">📄 Navigate to Insights!</h3>
+                <p style="margin: 5px 0 0 0; color: #424242;">Click on the <strong>'🤖 AI Analysis'</strong> tab above to view generated insights</p>
+            </div>
+            """, unsafe_allow_html=True)
+
 
 def initialize_session_state():
     """Initialize all session state variables"""
@@ -988,7 +1127,7 @@ def initialize_session_state():
         st.session_state.navigate_to_tab = None
 
 def load_multi_sheet_excel(file_upload):
-    """Load all sheets from Excel file"""
+    """Load all sheets from Excel file with sanitized table names"""
     try:
         # Read the file into memory first
         file_content = file_upload.read()
@@ -1003,7 +1142,18 @@ def load_multi_sheet_excel(file_upload):
                 # Read each sheet from the ExcelFile object
                 df = excel_file.parse(sheet_name)
                 if not df.empty:
-                    loaded_tables[sheet_name] = df
+                    # Sanitize sheet name for SQL compatibility
+                    sanitized_name = sanitize_name(sheet_name)
+                    
+                    # Sanitize column names as well
+                    df.columns = [sanitize_name(col) for col in df.columns]
+                    
+                    # Use sanitized name as table name
+                    loaded_tables[sanitized_name] = df
+                    
+                    # Show warning if name was changed
+                    if sanitized_name != sheet_name:
+                        st.info(f"📝 Sheet '{sheet_name}' renamed to '{sanitized_name}' for SQL compatibility")
             except Exception as e:
                 st.warning(f"Could not load sheet '{sheet_name}': {str(e)}")
         
@@ -1149,14 +1299,14 @@ def main():
     """Main application function"""
     initialize_session_state()
     
-    # Handle tab navigation
-    handle_tab_navigation()
-    
     # Header with visible logo
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         st.markdown('<div style="text-align: center;"><span class="logo-emoji">📊</span><h1 class="main-header">BI Agent</h1></div>', unsafe_allow_html=True)
         st.markdown('<p class="sub-header">AI-Powered Data Analysis</p>', unsafe_allow_html=True)
+    
+    # Handle tab navigation - show notifications after header
+    handle_tab_navigation()
     
     # Main tabs - reduced to fit better
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
@@ -1186,6 +1336,359 @@ def main():
     with tab6:
         settings_tab()
 
+def show_table_editor_interface(table_name, df):
+    """Show the table editor interface for a specific table"""
+    # Initialize edited dataframe if not exists
+    if f"edited_df_{table_name}" not in st.session_state:
+        st.session_state[f"edited_df_{table_name}"] = df.copy()
+        # Add empty rows for new data entry
+        empty_rows = pd.DataFrame(index=range(3), columns=df.columns)
+        empty_rows = empty_rows.fillna('')  # Fill with empty strings for editing
+        st.session_state[f"edited_df_{table_name}"] = pd.concat([st.session_state[f"edited_df_{table_name}"], empty_rows], ignore_index=True)
+    
+    edited_df = st.session_state[f"edited_df_{table_name}"]
+    
+    # Show current table info and finish editing option
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        st.info(f"Currently editing: **{table_name}** ({edited_df.shape[0]} rows × {edited_df.shape[1]} columns)")
+    with col2:
+        if st.button("✅ Finish Editing", key=f"finish_edit_{table_name}"):
+            # Save changes before finishing
+            non_empty_rows = st.session_state[f"edited_df_{table_name}"][~(st.session_state[f"edited_df_{table_name}"] == '').all(axis=1)]
+            if not non_empty_rows.empty:
+                # Save to appropriate location
+                if table_name in st.session_state.loaded_tables:
+                    st.session_state.loaded_tables[table_name] = non_empty_rows
+                elif table_name == 'main':
+                    st.session_state.data_processor.data = non_empty_rows
+                    st.session_state.data_processor._register_data_in_duckdb()
+                
+                # Clear the edited_df from session state
+                if f"edited_df_{table_name}" in st.session_state:
+                    del st.session_state[f"edited_df_{table_name}"]
+                
+                st.success("✅ Changes saved and editing finished!")
+            else:
+                st.warning("⚠️ No data to save.")
+            
+            # Exit editing mode but keep expander open
+            st.session_state[f"editing_table_{table_name}"] = False
+            st.session_state[f"expander_open_{table_name}"] = True
+            st.rerun()
+    
+    # Excel-like interface with column headers and add buttons
+    if len(edited_df.columns) > 6:
+        st.markdown("**📊 Wide Table View: Click on any cell to edit. Use the + buttons to add columns/rows. Scroll horizontally to see all columns.**")
+    else:
+        st.markdown("**Click on any cell to edit. Use the + buttons to add columns/rows.**")
+    
+    # Pagination for large tables
+    rows_per_page = 20
+    total_rows = len(edited_df)
+    
+    if total_rows > rows_per_page:
+        # Initialize pagination state
+        if f"current_page_{table_name}" not in st.session_state:
+            st.session_state[f"current_page_{table_name}"] = 1
+        
+        total_pages = (total_rows + rows_per_page - 1) // rows_per_page  # Ceiling division
+        current_page = st.session_state[f"current_page_{table_name}"]
+        
+        # Pagination controls
+        col1, col2, col3, col4, col5 = st.columns([1, 1, 2, 1, 1])
+        
+        with col1:
+            if st.button("⏮️ First", key=f"first_page_{table_name}"):
+                st.session_state[f"current_page_{table_name}"] = 1
+                st.rerun()
+        
+        with col2:
+            if st.button("⬅️ Prev", key=f"prev_page_{table_name}") and current_page > 1:
+                st.session_state[f"current_page_{table_name}"] = current_page - 1
+                st.rerun()
+        
+        with col3:
+            st.markdown(f"**Page {current_page} of {total_pages}** ({total_rows} total rows)")
+        
+        with col4:
+            if st.button("➡️ Next", key=f"next_page_{table_name}") and current_page < total_pages:
+                st.session_state[f"current_page_{table_name}"] = current_page + 1
+                st.rerun()
+        
+        with col5:
+            if st.button("⏭️ Last", key=f"last_page_{table_name}"):
+                st.session_state[f"current_page_{table_name}"] = total_pages
+                st.rerun()
+        
+        # Custom page input - better positioned
+        st.markdown("---")
+        col1, col2, col3, col4 = st.columns([1, 1, 1, 2])
+        with col1:
+            custom_page = st.number_input(
+                "Go to page:",
+                min_value=1,
+                max_value=total_pages,
+                value=current_page,
+                key=f"custom_page_{table_name}"
+            )
+        with col2:
+            if st.button("Go", key=f"go_page_{table_name}"):
+                st.session_state[f"current_page_{table_name}"] = custom_page
+                st.rerun()
+        with col3:
+            st.markdown("")  # Empty space for alignment
+        with col4:
+            st.markdown(f"**Showing rows {(current_page-1)*rows_per_page + 1} to {min(current_page*rows_per_page, total_rows)}**")
+        
+        # Get the current page data
+        start_idx = (current_page - 1) * rows_per_page
+        end_idx = min(start_idx + rows_per_page, total_rows)
+        current_page_data = edited_df.iloc[start_idx:end_idx]
+        
+        st.markdown("---")
+    else:
+        # No pagination needed for small tables
+        current_page_data = edited_df
+        current_page = 1
+    
+    # Create the table with Excel-like headers (including row number column)
+    # Adjust column widths based on number of columns for better readability
+    if len(edited_df.columns) > 6:
+        # For wide tables, use fixed widths to ensure proper scrolling
+        col_widths = [0.08] + [0.92] * len(edited_df.columns) + [0.08]  # Row numbers + data columns + action buttons
+    else:
+        # For narrow tables, use normal column widths
+        col_widths = [0.3] + [1] * len(edited_df.columns) + [0.3]  # Row numbers + data columns + action buttons
+    
+    # Add horizontal scroll for tables with more than 6 columns
+    if len(edited_df.columns) > 6:
+        st.markdown("**📊 Wide Table View: Scroll horizontally to see all columns**")
+        st.markdown("---")
+        
+        # Use a more effective CSS approach that works with Streamlit
+        st.markdown("""
+        <style>
+        .wide-table-scroll {
+            overflow-x: auto !important;
+            border: 2px solid #007bff;
+            border-radius: 8px;
+            padding: 15px;
+            background-color: #f8f9fa;
+            margin: 10px 0;
+            width: 100% !important;
+        }
+        .wide-table-scroll .stColumns {
+            min-width: max-content !important;
+            flex-wrap: nowrap !important;
+            width: max-content !important;
+        }
+        .wide-table-scroll .stTextInput > div > div > input {
+            min-width: 120px !important;
+            width: 120px !important;
+        }
+        .wide-table-scroll .stButton > button {
+            min-width: 35px !important;
+        }
+        .wide-table-scroll .stMarkdown {
+            white-space: nowrap !important;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+        
+        # Start the scrollable container
+        st.markdown('<div class="wide-table-scroll">', unsafe_allow_html=True)
+    
+    # Column headers with add/delete column functionality
+    header_cols = st.columns(col_widths)
+    
+    # Row number header
+    with header_cols[0]:
+        st.markdown("**#**")
+    
+    # Data column headers
+    for i, col in enumerate(edited_df.columns):
+        with header_cols[i + 1]:  # +1 because first column is row numbers
+            # Column header with rename, add, and delete options
+            col1, col2, col3 = st.columns([2, 1, 1])
+            
+            with col1:
+                # Directly editable column name
+                new_col_name = st.text_input(
+                    "Column name:",
+                    value=col,
+                    key=f"header_input_{col}_{table_name}",
+                    help=f"Edit column name: {col}",
+                    label_visibility="collapsed"
+                )
+                
+                # Check if column name was changed
+                if new_col_name != col and new_col_name:
+                    is_valid, message = validate_column_name(new_col_name)
+                    if is_valid:
+                        # Rename the column
+                        st.session_state[f"edited_df_{table_name}"].rename(columns={col: new_col_name}, inplace=True)
+                        df.rename(columns={col: new_col_name}, inplace=True)
+                        st.rerun()
+                    else:
+                        st.error(f"❌ {message}")
+            
+            with col2:
+                if st.button("➕", key=f"add_col_after_{col}_{table_name}", help=f"Add column after {col}"):
+                    # Add new column after current column
+                    new_col_name = f"Column{len(edited_df.columns) + 1}"
+                    new_position = i + 1
+                    
+                    # Insert new column
+                    st.session_state[f"edited_df_{table_name}"].insert(new_position, new_col_name, "")
+                    df.insert(new_position, new_col_name, "")
+                    # Ensure editing state and expander state are maintained
+                    st.session_state[f"editing_table_{table_name}"] = True
+                    st.session_state[f"expander_open_{table_name}"] = True
+                    st.rerun()
+            
+            with col3:
+                if len(edited_df.columns) > 1:  # Don't allow deleting the last column
+                    if st.button("🗑️", key=f"del_col_{col}_{table_name}", help=f"Delete column {col}"):
+                        # Delete column
+                        st.session_state[f"edited_df_{table_name}"].drop(columns=[col], inplace=True)
+                        df.drop(columns=[col], inplace=True)
+                        # Ensure editing state and expander state are maintained
+                        st.session_state[f"editing_table_{table_name}"] = True
+                        st.session_state[f"expander_open_{table_name}"] = True
+                        st.rerun()
+                else:
+                    st.write("")  # Empty space for alignment
+    
+    # Add column at the end
+    with header_cols[-1]:
+        if st.button("➕", key=f"add_col_end_{table_name}", help="Add column at the end"):
+            new_col_name = f"Column{len(edited_df.columns) + 1}"
+            st.session_state[f"edited_df_{table_name}"][new_col_name] = ""
+            df[new_col_name] = ""
+            # Ensure editing state and expander state are maintained
+            st.session_state[f"editing_table_{table_name}"] = True
+            st.session_state[f"expander_open_{table_name}"] = True
+            st.rerun()
+    
+    # Data rows with Excel-like editing (paginated)
+    for display_row_num, (row_idx, row) in enumerate(current_page_data.iterrows()):
+        row_cols = st.columns(col_widths)
+        
+        # Calculate actual row number for display (accounting for pagination)
+        if total_rows > rows_per_page:
+            actual_row_num = (current_page - 1) * rows_per_page + display_row_num + 1
+        else:
+            actual_row_num = display_row_num + 1
+        
+        # Row number (always sequential: 1, 2, 3, 4...)
+        with row_cols[0]:
+            st.markdown(f"**{actual_row_num}**")
+        
+        # Data cells
+        for col_idx, col in enumerate(edited_df.columns):
+            with row_cols[col_idx + 1]:  # +1 because first column is row numbers
+                # Editable cell - simplified display
+                cell_value = str(row[col]) if pd.notna(row[col]) else ""
+                new_value = st.text_input(
+                    f"Edit {col}",
+                    value=cell_value,
+                    key=f"cell_{row_idx}_{col}_{table_name}",
+                    help=f"Edit: {cell_value}",
+                    label_visibility="collapsed"
+                )
+                
+                # Update the dataframe
+                st.session_state[f"edited_df_{table_name}"].at[row_idx, col] = new_value
+        
+        # Row action buttons (add and delete)
+        with row_cols[-1]:
+            col1, col2 = st.columns([1, 1])
+            
+            with col1:
+                if st.button("➕", key=f"add_row_after_{row_idx}_{table_name}", help=f"Add row after row {actual_row_num}"):
+                    # Add new row after current row
+                    new_row = pd.Series([''] * len(edited_df.columns), index=edited_df.columns)
+                    st.session_state[f"edited_df_{table_name}"] = pd.concat([
+                        edited_df.iloc[:row_idx + 1],
+                        new_row.to_frame().T,
+                        edited_df.iloc[row_idx + 1:]
+                    ], ignore_index=True)
+                    # Ensure editing state is maintained
+                    st.session_state[f"editing_table_{table_name}"] = True
+                    st.rerun()
+            
+            with col2:
+                if st.button("🗑️", key=f"del_row_{row_idx}_{table_name}", help=f"Delete row {actual_row_num}"):
+                    # Delete current row
+                    st.session_state[f"edited_df_{table_name}"].drop(index=row_idx, inplace=True)
+                    st.session_state[f"edited_df_{table_name}"].reset_index(drop=True, inplace=True)
+                    # Ensure editing state is maintained
+                    st.session_state[f"editing_table_{table_name}"] = True
+                    st.rerun()
+    
+    # Close horizontal scroll container if needed
+    if len(edited_df.columns) > 6:
+        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown("---")
+        
+    # Add row at the end
+    st.markdown("---")
+    col1, col2, col3 = st.columns([1, 2, 1])
+    
+    with col2:
+        if st.button("➕ Add Row at Bottom", key=f"add_row_bottom_{table_name}"):
+            new_row = pd.Series([''] * len(edited_df.columns), index=edited_df.columns)
+            st.session_state[f"edited_df_{table_name}"] = pd.concat([edited_df, new_row.to_frame().T], ignore_index=True)
+            # Ensure editing state is maintained
+            st.session_state[f"editing_table_{table_name}"] = True
+            st.rerun()
+        
+        # Action buttons
+        st.markdown("---")
+        col1, col2, col3 = st.columns([1, 1, 1])
+        
+        with col1:
+            if st.button("✅ Finish Editing", key=f"finish_edit_bottom_{table_name}", type="primary"):
+                # Save changes before finishing
+                non_empty_rows = st.session_state[f"edited_df_{table_name}"][~(st.session_state[f"edited_df_{table_name}"] == '').all(axis=1)]
+                if not non_empty_rows.empty:
+                    # Save to appropriate location
+                    if table_name in st.session_state.loaded_tables:
+                        st.session_state.loaded_tables[table_name] = non_empty_rows
+                    elif table_name == 'main':
+                        st.session_state.data_processor.data = non_empty_rows
+                        st.session_state.data_processor._register_data_in_duckdb()
+                    
+                    # Clear the edited_df from session state
+                    if f"edited_df_{table_name}" in st.session_state:
+                        del st.session_state[f"edited_df_{table_name}"]
+                    
+                    st.success("✅ Changes saved and editing finished!")
+                else:
+                    st.warning("⚠️ No data to save.")
+                
+                # Exit editing mode but keep expander open
+                st.session_state[f"editing_table_{table_name}"] = False
+                st.session_state[f"expander_open_{table_name}"] = True
+                st.rerun()
+        
+        with col2:
+            if st.button("🔄 Reset", key=f"reset_data_{table_name}"):
+                # Reset to original data
+                st.session_state[f"edited_df_{table_name}"] = df.copy()
+                st.session_state[f"expander_open_{table_name}"] = True
+                st.rerun()
+        
+        with col3:
+            if st.button("❌ Cancel", key=f"cancel_edit_{table_name}"):
+                # Discard changes and exit editing mode
+                if f"edited_df_{table_name}" in st.session_state:
+                    del st.session_state[f"edited_df_{table_name}"]
+                st.session_state[f"editing_table_{table_name}"] = False
+                st.session_state[f"expander_open_{table_name}"] = True
+                st.rerun()
+
 def data_load_tab():
     """Data loading tab with AI model initialization first"""
     st.header("📁 Data Load & AI Setup")
@@ -1204,6 +1707,7 @@ def data_load_tab():
         
         if OLLAMA_AVAILABLE:
             available_models = get_available_models()
+            missing_models = get_missing_models()
             
             if available_models:
                 col1, col2 = st.columns([3, 1])
@@ -1228,11 +1732,60 @@ def data_load_tab():
                                     st.error(f"❌ Failed to initialize {model_name}")
                             except Exception as e:
                                 st.error(f"❌ Error: {str(e)}")
+                
+                # Show available models info
+                st.info(f"📋 **Available Models ({len(available_models)}):** {', '.join(available_models)}")
+                
+                # Show missing recommended models and download commands
+                if missing_models:
+                    st.markdown("---")
+                    st.subheader("📥 Download Additional Models")
+                    st.write("**Recommended models not yet downloaded:**")
+                    
+                    # Show missing models in a nice format
+                    for i, model in enumerate(missing_models[:5], 1):  # Show first 5
+                        st.write(f"{i}. `{model}`")
+                    
+                    if len(missing_models) > 5:
+                        st.write(f"... and {len(missing_models) - 5} more")
+                    
+                    # Generate download commands
+                    download_commands = generate_download_commands(missing_models)
+                    
+                    with st.expander("🔧 Download Commands", expanded=False):
+                        st.write("**Copy and run these commands in your terminal:**")
+                        st.code("\n".join(download_commands), language="bash")
+                        
+                        # Individual model download buttons
+                        st.write("**Or download individual models:**")
+                        cols = st.columns(min(3, len(missing_models[:6])))
+                        for i, model in enumerate(missing_models[:6]):
+                            with cols[i % 3]:
+                                if st.button(f"📥 {model.split(':')[0]}", key=f"download_{model}"):
+                                    st.info(f"Run: `ollama pull {model}`")
             else:
                 st.warning("⚠️ No AI models found. Please download a model to continue.")
                 
                 # Model download section with popular models
                 st.markdown("### 📥 Download AI Model")
+                
+                # Get recommended models and show download commands
+                recommended_models = get_recommended_models()
+                download_commands = generate_download_commands(recommended_models)
+                
+                st.write("**Popular models to get started:**")
+                for i, model in enumerate(recommended_models[:5], 1):
+                    st.write(f"{i}. `{model}`")
+                
+                with st.expander("🔧 Download Commands", expanded=True):
+                    st.write("**Copy and run these commands in your terminal:**")
+                    st.code("\n".join(download_commands), language="bash")
+                
+                # Quick start section
+                st.markdown("### 🚀 Quick Start")
+                st.write("1. **Start Ollama service:** `ollama serve`")
+                st.write("2. **Download a model:** `ollama pull llama3:8b-instruct`")
+                st.write("3. **Refresh this page** to see available models")
                 
                 # Popular models section
                 st.markdown("**Popular Models:**")
@@ -1435,6 +1988,10 @@ def data_load_tab():
                     is_valid, message = validate_table_name(table_name)
                     if not is_valid:
                         st.error(f"❌ {message}")
+                        # Auto-suggest sanitized name
+                        if ' ' in table_name:
+                            sanitized = sanitize_name(table_name)
+                            st.info(f"💡 Try using: '{sanitized}'")
                     else:
                         # Check for duplicates
                         all_tables = {}
@@ -1486,8 +2043,13 @@ def data_load_tab():
         
         if all_tables:
             for table_name, df in all_tables.items():
-                with st.expander(f"📊 {table_name} ({df.shape[0]} rows × {df.shape[1]} columns)", expanded=False):
-                    col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
+                # Initialize expander state if not exists
+                if f"expander_open_{table_name}" not in st.session_state:
+                    st.session_state[f"expander_open_{table_name}"] = False
+                
+                with st.expander(f"📊 {table_name} ({df.shape[0]} rows × {df.shape[1]} columns)", 
+                               expanded=st.session_state[f"expander_open_{table_name}"]):
+                    col1, col2, col3, col4, col5 = st.columns([2, 1, 1, 1, 1])
                     
                     with col1:
                         st.markdown(f"**Columns:** {', '.join(df.columns.tolist())}")
@@ -1501,6 +2063,12 @@ def data_load_tab():
                             st.rerun()
                     
                     with col4:
+                        if st.button(f"✏️ Edit", key=f"edit_{table_name}"):
+                            st.session_state[f"editing_table_{table_name}"] = True
+                            st.session_state[f"expander_open_{table_name}"] = True
+                            st.rerun()
+                    
+                    with col5:
                         if st.button(f"🗑️ Delete", key=f"delete_{table_name}"):
                             if table_name in st.session_state.loaded_tables:
                                 del st.session_state.loaded_tables[table_name]
@@ -1519,17 +2087,38 @@ def data_load_tab():
                                     if is_valid:
                                         is_unique, dup_message = check_duplicate_table_name(new_name, all_tables)
                                         if is_unique:
-                                            # Rename the table
+                                            # Get the table data first
+                                            table_data = None
+                                            
+                                            # Check where the table exists and get its data
                                             if table_name in st.session_state.loaded_tables:
-                                                st.session_state.loaded_tables[new_name] = st.session_state.loaded_tables.pop(table_name)
-                                            elif table_name == 'main':
-                                                # For main table, we need to handle differently
-                                                st.session_state.loaded_tables[new_name] = st.session_state.data_processor.get_data()
+                                                table_data = st.session_state.loaded_tables.pop(table_name)
+                                            elif table_name == 'main' and st.session_state.data_processor.has_data():
+                                                table_data = st.session_state.data_processor.get_data()
                                                 st.session_state.data_processor.clear_data()
                                             
-                                            st.session_state.current_table = new_name
-                                            st.success(f"✅ Table renamed to '{new_name}'")
-                                            st.rerun()
+                                            if table_data is not None:
+                                                # Add the table with new name to loaded_tables
+                                                st.session_state.loaded_tables[new_name] = table_data
+                                                
+                                                # Update current table reference
+                                                if st.session_state.get('current_table') == table_name:
+                                                    st.session_state.current_table = new_name
+                                                
+                                                # Clear any editing states for the old table name
+                                                if f"editing_table_{table_name}" in st.session_state:
+                                                    del st.session_state[f"editing_table_{table_name}"]
+                                                if f"edited_df_{table_name}" in st.session_state:
+                                                    del st.session_state[f"edited_df_{table_name}"]
+                                                
+                                                # Clear the renaming state
+                                                if f"renaming_{table_name}" in st.session_state:
+                                                    del st.session_state[f"renaming_{table_name}"]
+                                                
+                                                st.success(f"✅ Table renamed from '{table_name}' to '{new_name}'")
+                                                st.rerun()
+                                            else:
+                                                st.error(f"❌ Could not find table '{table_name}' to rename")
                                         else:
                                             st.error(f"❌ {dup_message}")
                                     else:
@@ -1541,349 +2130,16 @@ def data_load_tab():
                                 st.session_state[f"renaming_{table_name}"] = False
                                 st.rerun()
     
-    # Data preview
-                    st.markdown("**Data Preview:**")
-                    safe_dataframe_display(df.head(10), width='stretch')
-    
-    # Excel-like data entry interface for all tables
-    # Get all available tables (including sample data and Excel files)
-    all_available_tables = {}
-    if st.session_state.loaded_tables:
-        all_available_tables.update(st.session_state.loaded_tables)
-    if st.session_state.data_processor.has_data():
-        all_available_tables['main'] = st.session_state.data_processor.get_data()
-    
-    if all_available_tables:
-        # Check if any table is currently being edited
-        currently_editing = None
-        for table_name in all_available_tables.keys():
-            if st.session_state.get(f"editing_table_{table_name}", False):
-                currently_editing = table_name
-                break
-        
-        # Show table selection if no table is being edited
-        if not currently_editing:
-            st.subheader("📊 Select Table to Edit")
-            table_options = list(all_available_tables.keys())
-            selected_table = st.selectbox(
-                "Choose a table to edit:",
-                table_options,
-                key="table_selector_edit",
-                help="Select which table you want to edit"
-            )
-            
-            col1, col2 = st.columns([1, 3])
-            with col1:
-                if st.button("✏️ Edit Selected Table", key="start_edit_btn", type="primary"):
-                    st.session_state[f"editing_table_{selected_table}"] = True
-                    st.rerun()
-            
-            with col2:
-                st.info(f"Selected: **{selected_table}** ({all_available_tables[selected_table].shape[0]} rows × {all_available_tables[selected_table].shape[1]} columns)")
-        
-        # Show the editing interface for the currently editing table
-        if currently_editing:
-            df = all_available_tables[currently_editing]
-            table_name = currently_editing
-            
-            st.markdown("---")
-            st.subheader(f"📊 Data Editor: {table_name}")
-                
-            # Show current table info and option to switch
-            col1, col2, col3 = st.columns([2, 1, 1])
-            with col1:
-                st.info(f"Currently editing: **{table_name}** ({df.shape[0]} rows × {df.shape[1]} columns)")
-            with col2:
-                if st.button("🔄 Switch Table", key="switch_table_btn"):
-                    # Stop editing current table
-                    st.session_state[f"editing_table_{table_name}"] = False
-                    st.rerun()
-            with col3:
-                if st.button("✅ Finish Editing", key="finish_edit_btn"):
-                    # Save changes before finishing
-                    non_empty_rows = st.session_state[f"edited_df_{table_name}"][~(st.session_state[f"edited_df_{table_name}"] == '').all(axis=1)]
-                    if not non_empty_rows.empty:
-                        # Save to appropriate location
-                        if table_name in st.session_state.loaded_tables:
-                            st.session_state.loaded_tables[table_name] = non_empty_rows
-                        elif table_name == 'main':
-                            st.session_state.data_processor.data = non_empty_rows
-                            st.session_state.data_processor._register_data_in_duckdb()
-                        
-                        # Clear the edited_df from session state
-                        if f"edited_df_{table_name}" in st.session_state:
-                            del st.session_state[f"edited_df_{table_name}"]
-                        
-                        st.success("✅ Changes saved and editing finished!")
+                    # Check if this table is being edited
+                    if st.session_state.get(f"editing_table_{table_name}", False):
+                        # Show editor interface instead of data preview
+                        st.markdown("**📝 Table Editor:**")
+                        show_table_editor_interface(table_name, df)
                     else:
-                        st.warning("⚠️ No data to save.")
-                    
-                    # Exit editing mode
-                    st.session_state[f"editing_table_{table_name}"] = False
-                    st.rerun()
-            
-            # Initialize edited_df in session state if not exists
-            if f"edited_df_{table_name}" not in st.session_state:
-                st.session_state[f"edited_df_{table_name}"] = df.copy()
-                # Add empty rows for new data entry
-                empty_rows = pd.DataFrame(index=range(3), columns=df.columns)
-                empty_rows = empty_rows.fillna('')  # Fill with empty strings for editing
-                st.session_state[f"edited_df_{table_name}"] = pd.concat([st.session_state[f"edited_df_{table_name}"], empty_rows], ignore_index=True)
-            
-            edited_df = st.session_state[f"edited_df_{table_name}"]
-            
-            # Excel-like interface with column headers and add buttons
-            st.markdown("**Click on any cell to edit. Use the + buttons to add columns/rows.**")
-            
-            # Pagination for large tables
-            rows_per_page = 20
-            total_rows = len(edited_df)
-            
-            if total_rows > rows_per_page:
-                # Initialize pagination state
-                if f"current_page_{table_name}" not in st.session_state:
-                    st.session_state[f"current_page_{table_name}"] = 1
-                
-                total_pages = (total_rows + rows_per_page - 1) // rows_per_page  # Ceiling division
-                current_page = st.session_state[f"current_page_{table_name}"]
-                
-                # Pagination controls
-                col1, col2, col3, col4, col5 = st.columns([1, 1, 2, 1, 1])
-                
-                with col1:
-                    if st.button("⏮️ First", key=f"first_page_{table_name}"):
-                        st.session_state[f"current_page_{table_name}"] = 1
-                        st.rerun()
-                
-                with col2:
-                    if st.button("⬅️ Prev", key=f"prev_page_{table_name}") and current_page > 1:
-                        st.session_state[f"current_page_{table_name}"] = current_page - 1
-                        st.rerun()
-                
-                with col3:
-                    st.markdown(f"**Page {current_page} of {total_pages}** ({total_rows} total rows)")
-                
-                with col4:
-                    if st.button("➡️ Next", key=f"next_page_{table_name}") and current_page < total_pages:
-                        st.session_state[f"current_page_{table_name}"] = current_page + 1
-                        st.rerun()
-                
-                with col5:
-                    if st.button("⏭️ Last", key=f"last_page_{table_name}"):
-                        st.session_state[f"current_page_{table_name}"] = total_pages
-                        st.rerun()
-                
-                # Custom page input
-                col1, col2, col3 = st.columns([1, 1, 2])
-                with col1:
-                    custom_page = st.number_input(
-                        "Go to page:",
-                        min_value=1,
-                        max_value=total_pages,
-                        value=current_page,
-                        key=f"custom_page_{table_name}"
-                    )
-                with col2:
-                    if st.button("Go", key=f"go_page_{table_name}"):
-                        st.session_state[f"current_page_{table_name}"] = custom_page
-                        st.rerun()
-                with col3:
-                    st.markdown(f"Showing rows {(current_page-1)*rows_per_page + 1} to {min(current_page*rows_per_page, total_rows)}")
-                
-                # Get the current page data
-                start_idx = (current_page - 1) * rows_per_page
-                end_idx = min(start_idx + rows_per_page, total_rows)
-                current_page_data = edited_df.iloc[start_idx:end_idx]
-                
-                st.markdown("---")
-            else:
-                # No pagination needed for small tables
-                current_page_data = edited_df
-                current_page = 1
-            
-            # Create the table with Excel-like headers (including row number column)
-            col_widths = [0.3] + [1] * len(edited_df.columns) + [0.3]  # Row numbers + data columns + action buttons
-            
-            # Container with horizontal scroll for many columns
-            with st.container():
-                # Column headers with add/delete column functionality
-                header_cols = st.columns(col_widths)
-                
-                # Row number header
-                with header_cols[0]:
-                    st.markdown("**#**")
-                
-                # Data column headers
-                for i, col in enumerate(edited_df.columns):
-                    with header_cols[i + 1]:  # +1 because first column is row numbers
-                        # Column header with rename, add, and delete options
-                        col1, col2, col3 = st.columns([2, 1, 1])
-                        
-                        with col1:
-                            # Make column name editable
-                            new_col_name = st.text_input(
-                                "Column Name",
-                                value=col,
-                                key=f"header_{col}_{table_name}",
-                                help=f"Click to rename column: {col}",
-                                label_visibility="collapsed"
-                            )
-                            
-                            # Update column name if changed
-                            if new_col_name != col and new_col_name:
-                                st.session_state[f"edited_df_{table_name}"].rename(columns={col: new_col_name}, inplace=True)
-                                df.rename(columns={col: new_col_name}, inplace=True)
-                                st.rerun()
-                        
-                        with col2:
-                            if st.button("➕", key=f"add_col_after_{col}_{table_name}", help=f"Add column after {col}"):
-                                # Add new column after current column
-                                new_col_name = f"Column{len(edited_df.columns) + 1}"
-                                new_position = i + 1
-                                
-                                # Insert new column
-                                st.session_state[f"edited_df_{table_name}"].insert(new_position, new_col_name, "")
-                                df.insert(new_position, new_col_name, "")
-                                st.rerun()
-                
-                        with col3:
-                            if len(edited_df.columns) > 1:  # Don't allow deleting the last column
-                                if st.button("🗑️", key=f"del_col_{col}_{table_name}", help=f"Delete column {col}"):
-                                    # Delete column
-                                    st.session_state[f"edited_df_{table_name}"].drop(columns=[col], inplace=True)
-                                    df.drop(columns=[col], inplace=True)
-                                    st.rerun()
-                            else:
-                                st.write("")  # Empty space for alignment
-                
-                # Add column at the end
-                with header_cols[-1]:
-                    if st.button("➕", key=f"add_col_end_{table_name}", help="Add column at the end"):
-                        new_col_name = f"Column{len(edited_df.columns) + 1}"
-                        st.session_state[f"edited_df_{table_name}"][new_col_name] = ""
-                        df[new_col_name] = ""
-                        st.rerun()
-                
-                # Data rows with Excel-like editing (paginated)
-                for display_row_num, (row_idx, row) in enumerate(current_page_data.iterrows()):
-                    row_cols = st.columns(col_widths)
-                    
-                    # Calculate actual row number for display (accounting for pagination)
-                    if total_rows > rows_per_page:
-                        actual_row_num = (current_page - 1) * rows_per_page + display_row_num + 1
-                    else:
-                        actual_row_num = display_row_num + 1
-                    
-                    # Row number (always sequential: 1, 2, 3, 4...)
-                    with row_cols[0]:
-                        st.markdown(f"**{actual_row_num}**")
-                    
-                    # Data cells
-                    for col_idx, col in enumerate(edited_df.columns):
-                        with row_cols[col_idx + 1]:  # +1 because first column is row numbers
-                            # Editable cell
-                            cell_value = str(row[col]) if pd.notna(row[col]) else ""
-                            new_value = st.text_input(
-                                "Cell Value",
-                                value=cell_value,
-                                key=f"cell_{row_idx}_{col}_{table_name}",
-                                help=f"Edit cell at row {actual_row_num}, column {col}",
-                                label_visibility="collapsed"
-                            )
-                            
-                            # Update the dataframe
-                            st.session_state[f"edited_df_{table_name}"].at[row_idx, col] = new_value
-                    
-                    # Row action buttons (add and delete)
-                    with row_cols[-1]:
-                        col1, col2 = st.columns([1, 1])
-                        
-                        with col1:
-                            if st.button("➕", key=f"add_row_after_{row_idx}_{table_name}", help=f"Add row after row {actual_row_num}"):
-                                # Add new row after current row
-                                new_row = pd.Series([''] * len(edited_df.columns), index=edited_df.columns)
-                                st.session_state[f"edited_df_{table_name}"] = pd.concat([
-                                    edited_df.iloc[:row_idx + 1],
-                                    new_row.to_frame().T,
-                                    edited_df.iloc[row_idx + 1:]
-                                ], ignore_index=True)
-                                st.rerun()
-                        
-                        with col2:
-                            if st.button("🗑️", key=f"del_row_{row_idx}_{table_name}", help=f"Delete row {actual_row_num}"):
-                                # Delete current row
-                                st.session_state[f"edited_df_{table_name}"].drop(index=row_idx, inplace=True)
-                                st.session_state[f"edited_df_{table_name}"].reset_index(drop=True, inplace=True)
-                                st.rerun()
-                
-            # Add row at the end
-            st.markdown("---")
-            col1, col2, col3 = st.columns([1, 2, 1])
-            
-            with col2:
-                if st.button("➕ Add Row at Bottom", key=f"add_row_bottom_{table_name}"):
-                    new_row = pd.Series([''] * len(edited_df.columns), index=edited_df.columns)
-                    st.session_state[f"edited_df_{table_name}"] = pd.concat([edited_df, new_row.to_frame().T], ignore_index=True)
-                    st.rerun()
-                
-                # Action buttons
-                st.markdown("---")
-                col1, col2, col3 = st.columns([1, 1, 1])
-                
-                with col1:
-                    if st.button("💾 Save", key=f"save_data_{table_name}", type="primary"):
-                        # Remove empty rows and save
-                        non_empty_rows = st.session_state[f"edited_df_{table_name}"][~(st.session_state[f"edited_df_{table_name}"] == '').all(axis=1)]
-                        if not non_empty_rows.empty:
-                            # Save to appropriate location
-                            if table_name in st.session_state.loaded_tables:
-                                st.session_state.loaded_tables[table_name] = non_empty_rows
-                            elif table_name == 'main':
-                                st.session_state.data_processor.data = non_empty_rows
-                                st.session_state.data_processor._register_data_in_duckdb()
-                            
-                            # Clear the edited_df from session state
-                            if f"edited_df_{table_name}" in st.session_state:
-                                del st.session_state[f"edited_df_{table_name}"]
-                            
-                            st.success("✅ Data saved successfully!")
-                            st.rerun()
-                        else:
-                            st.warning("⚠️ No data to save.")
-                
-                with col2:
-                    if st.button("🔄 Reset", key=f"reset_data_{table_name}"):
-                        # Clear the edited_df from session state to reset
-                        if f"edited_df_{table_name}" in st.session_state:
-                            del st.session_state[f"edited_df_{table_name}"]
-                            st.rerun()
-                
-                with col3:
-                    if st.button("📊 Sort", key=f"sort_data_{table_name}"):
-                        # Simple sort by first column
-                        if not st.session_state[f"edited_df_{table_name}"].empty:
-                            st.session_state[f"edited_df_{table_name}"].sort_values(by=st.session_state[f"edited_df_{table_name}"].columns[0], inplace=True)
-                            st.rerun()
+                        # Show data preview
+                        st.markdown("**Data Preview:**")
+                        safe_dataframe_display(df.head(10), width='stretch')
     
-    # Navigation to next tab
-    st.markdown("---")
-    st.markdown("**🚀 Ready for the next step?**")
-    col_nav1, col_nav2, col_nav3 = st.columns([1, 1, 1])
-    
-    with col_nav1:
-        if st.button("🔍 Go to Explorer", key="nav_to_explorer", type="secondary", use_container_width=True):
-            st.session_state.navigate_to_tab = "explorer"
-            st.rerun()
-    
-    with col_nav2:
-        if st.button("🔗 Go to Relationships", key="nav_to_relationships", type="secondary", use_container_width=True):
-            st.session_state.navigate_to_tab = "relationships"
-            st.rerun()
-    
-    with col_nav3:
-        if st.button("💻 Go to Custom Queries", key="nav_to_queries", type="secondary", use_container_width=True):
-            st.session_state.navigate_to_tab = "queries"
-            st.rerun()
 
 def data_explorer_tab():
     """Data exploration tab with column selection"""
@@ -1970,24 +2226,6 @@ def data_explorer_tab():
             safe_dataframe_display(filtered_data.describe(), width='stretch')
     
     # Navigation to next tab
-    st.markdown("---")
-    st.markdown("**🚀 Ready for the next step?**")
-    col_nav1, col_nav2, col_nav3 = st.columns([1, 1, 1])
-    
-    with col_nav1:
-        if st.button("🔗 Go to Relationships", key="nav_explorer_to_relationships", type="secondary", use_container_width=True):
-            st.session_state.navigate_to_tab = "relationships"
-            st.rerun()
-    
-    with col_nav2:
-        if st.button("💻 Go to Custom Queries", key="nav_explorer_to_queries", type="secondary", use_container_width=True):
-            st.session_state.navigate_to_tab = "queries"
-            st.rerun()
-    
-    with col_nav3:
-        if st.button("🤖 Go to AI Analysis", key="nav_explorer_to_ai", type="secondary", use_container_width=True):
-            st.session_state.navigate_to_tab = "ai"
-            st.rerun()
 
 def edit_relationship_interface(rel_index, current_rel, all_tables):
     """Interface for editing an existing relationship"""
@@ -2088,6 +2326,7 @@ def edit_relationship_interface(rel_index, current_rel, all_tables):
             
             st.success("✅ Relationship deleted!")
             st.rerun()
+    
 
 def relationship_builder_tab():
     """Relationship builder tab with ER diagram"""
@@ -2102,200 +2341,236 @@ def relationship_builder_tab():
     if st.session_state.loaded_tables:
         all_tables.update(st.session_state.loaded_tables)
     if st.session_state.data_processor.has_data():
-        all_tables["main"] = st.session_state.data_processor.get_data()
+        all_tables.update(st.session_state.data_processor.get_all_data())
     
     if not all_tables:
         st.markdown('<div class="status-warning">⚠️ No tables available for relationship building.</div>', unsafe_allow_html=True)
         return
     
-    # Display table overview
-    st.subheader("📊 Available Tables")
+    # Display table metrics
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        st.metric("Total Tables", len(all_tables))
+        st.metric("Tables", len(all_tables))
     
     with col2:
-        total_rows = sum(df.shape[0] for df in all_tables.values())
-        st.metric("Total Rows", f"{total_rows:,}")
-    
-    with col3:
         total_cols = sum(df.shape[1] for df in all_tables.values())
         st.metric("Total Columns", total_cols)
+    
+    with col3:
+        total_rows = sum(df.shape[0] for df in all_tables.values())
+        st.metric("Total Rows", f"{total_rows:,}")
     
     with col4:
         relationships_count = len(st.session_state.get('relationships', []))
         st.metric("Relationships", relationships_count)
     
-    # Main relationship builder interface
-    col1, col2 = st.columns([1, 1])
+    # Main relationship builder interface - single column layout
+    st.subheader("🔗 Create Relationship")
     
-    with col1:
-        st.subheader("🔗 Create Relationship")
+    # AI-powered relationship detection
+    if st.button("🤖 Auto-Detect Relationships", key="ai_detect_relationships_btn", type="primary", use_container_width=True):
+        if hasattr(st.session_state, 'llm_agent') and st.session_state.llm_agent.is_initialized():
+            # Reset detection state to allow new detection
+            st.session_state[f"ai_detecting_relationships"] = True
+            st.session_state[f"ai_detection_started"] = False
+            st.session_state[f"ai_detection_completed"] = False
+            st.session_state[f"ai_detection_timestamp"] = st.session_state.get("_last_rerun_timestamp", 0)
+            st.rerun()
+        else:
+            st.warning("⚠️ Please initialize an AI model in the Data Load tab first.")
+    
+    # Show AI detection progress and results
+    if st.session_state.get(f"ai_detecting_relationships", False) and not st.session_state.get(f"ai_detection_completed", False):
+        # Check if this is the first time we're running detection
+        if not st.session_state.get(f"ai_detection_started", False):
+            st.session_state[f"ai_detection_started"] = True
+            st.session_state[f"ai_detection_completed"] = False
+            
+        progress_bar = st.progress(0)
+        status_text = st.empty()
         
-        # AI-powered relationship detection
-        if st.button("🤖 Auto-Detect Relationships", key="ai_detect_relationships_btn", type="primary", use_container_width=True):
-            if hasattr(st.session_state, 'llm_agent') and st.session_state.llm_agent.is_initialized():
-                st.session_state[f"ai_detecting_relationships"] = True
+        # Stop button
+        col_stop1, col_stop2 = st.columns([1, 4])
+        with col_stop1:
+            if st.button("⏹️ Stop AI Detection", key="stop_ai_detection_btn"):
+                st.session_state[f"ai_detecting_relationships"] = False
+                st.session_state[f"ai_detection_started"] = False
+                st.session_state[f"ai_detection_completed"] = True
                 st.rerun()
-            else:
-                st.warning("⚠️ Please initialize an AI model in the Data Load tab first.")
         
-        # Manual relationship creation
-        st.markdown("---")
-        st.markdown("**Manual Relationship Creation**")
+        with col_stop2:
+            st.write("")  # Empty space for alignment
         
-        # Table selection
-        table1 = st.selectbox("Source Table", list(all_tables.keys()), key="rel_table1")
-        table2 = st.selectbox("Target Table", list(all_tables.keys()), key="rel_table2")
-        
-        if table1 and table2 and table1 != table2:
-            col1_col, col2_col = st.columns(2)
+        # Simulate AI detection process
+        try:
+            # Step 1: Analyzing table structure
+            progress_bar.progress(20)
+            status_text.text("🔍 Analyzing table structure...")
             
-            with col1_col:
-                source_col = st.selectbox("Source Column", all_tables[table1].columns.tolist(), key="rel_source_col")
+            # Step 2: Detecting relationships
+            progress_bar.progress(60)
+            status_text.text("🤖 AI is detecting relationships...")
             
-            with col2_col:
-                target_col = st.selectbox("Target Column", all_tables[table2].columns.tolist(), key="rel_target_col")
+            # Call the actual AI detection
+            detected_relationships = st.session_state.llm_agent.detect_relationships(all_tables)
             
-            rel_type = st.selectbox("Relationship Type", ["One-to-One", "One-to-Many", "Many-to-One", "Many-to-Many"], key="rel_type")
+            # Step 3: Validating relationships
+            progress_bar.progress(90)
+            status_text.text("✅ Validating relationships...")
             
-            if st.button("➕ Add Relationship", key="add_manual_rel"):
-                if 'relationships' not in st.session_state:
-                    st.session_state.relationships = []
+            if detected_relationships:
+                # Filter out invalid relationships
+                valid_relationships = []
+                invalid_relationships = 0
                 
-                new_rel = {
-                    'source_table': table1,
-                    'source_column': source_col,
-                    'target_table': table2,
-                    'target_column': target_col,
-                    'type': rel_type
-                }
+                for rel in detected_relationships:
+                    # Check if all required fields exist and are valid
+                    if (all(field in rel for field in ['source_table', 'target_table', 'source_column', 'target_column']) and
+                        rel['source_table'] in all_tables and
+                        rel['target_table'] in all_tables and
+                        rel['source_column'] in all_tables[rel['source_table']].columns and
+                        rel['target_column'] in all_tables[rel['target_table']].columns):
+                        valid_relationships.append(rel)
+                    else:
+                        invalid_relationships += 1
                 
-                # Check for duplicates
-                if new_rel not in st.session_state.relationships:
-                    st.session_state.relationships.append(new_rel)
-                    st.success(f"✅ Relationship added: {table1}.{source_col} → {table2}.{target_col} ({rel_type})")
-                    st.rerun()
-                else:
-                    st.warning("⚠️ This relationship already exists.")
-        
-        # Show progress and run detection
-        if st.session_state.get(f"ai_detecting_relationships", False):
-            progress_bar = st.progress(0)
-            status_text = st.empty()
-            
-            # Stop button
-            col_stop1, col_stop2 = st.columns([1, 4])
-            with col_stop1:
-                if st.button("⏹️ Stop Detection", key="stop_ai_detection", type="secondary"):
-                    st.session_state[f"ai_detecting_relationships"] = False
-                    st.warning("🛑 AI relationship detection stopped by user.")
-                    st.rerun()
-            with col_stop2:
-                st.markdown("**🤖 AI is analyzing your data...**")
-                st.markdown("*Click 'Stop Detection' to cancel the process*")
-            
-            try:
-                # Check if user stopped the process
-                if not st.session_state.get(f"ai_detecting_relationships", False):
-                    return
-                
-                status_text.text("🔍 Analyzing table structures...")
-                progress_bar.progress(20)
-                
-                status_text.text("🤖 AI is analyzing relationships...")
-                progress_bar.progress(50)
-                
-                # Check again if user stopped the process
-                if not st.session_state.get(f"ai_detecting_relationships", False):
-                    return
-                
-                # Print to terminal for debugging
-                print("Starting AI relationship detection...")
-                detected_relationships = st.session_state.llm_agent.detect_relationships(all_tables)
-                print(f"AI detection completed. Found {len(detected_relationships) if detected_relationships else 0} relationships.")
-                
-                progress_bar.progress(80)
-                status_text.text("📊 Processing results...")
-                
-                # Final check if user stopped the process
-                if not st.session_state.get(f"ai_detecting_relationships", False):
-                    return
-                
-                if detected_relationships:
-                    # Initialize relationships if not exists
+                if valid_relationships:
+                    # Add valid relationships to session state
                     if 'relationships' not in st.session_state:
                         st.session_state.relationships = []
                     
+                    # Add only new relationships (avoid duplicates)
                     new_relationships = 0
-                    for rel in detected_relationships:
-                        # Add to existing relationships if not already present
-                        rel_exists = any(
-                            r['source_table'] == rel['source_table'] and 
-                            r['target_table'] == rel['target_table'] and
-                            r['source_column'] == rel['source_column'] and
-                            r['target_column'] == rel['target_column']
-                            for r in st.session_state.relationships
+                    for rel in valid_relationships:
+                        # Check if this relationship already exists
+                        exists = any(
+                            existing['source_table'] == rel['source_table'] and
+                            existing['target_table'] == rel['target_table'] and
+                            existing['source_column'] == rel['source_column'] and
+                            existing['target_column'] == rel['target_column']
+                            for existing in st.session_state.relationships
                         )
-                        if not rel_exists:
-                            st.session_state.relationships.append({
-                                "source_table": rel['source_table'],
-                                "target_table": rel['target_table'],
-                                "source_column": rel['source_column'],
-                                "target_column": rel['target_column'],
-                                "type": rel.get('relationship_type', 'One-to-Many'),
-                                "confidence": rel.get('confidence', 'Medium')
-                            })
+                        
+                        if not exists:
+                            # Convert AI format to our format
+                            relationship = {
+                                'source_table': rel['source_table'],
+                                'target_table': rel['target_table'],
+                                'source_column': rel['source_column'],
+                                'target_column': rel['target_column'],
+                                'type': rel.get('relationship_type', 'One-to-Many'),
+                                'confidence': rel.get('confidence', 'Medium'),
+                                'reasoning': rel.get('reasoning', 'AI detected'),
+                                'detection_method': rel.get('detection_method', 'ai')
+                            }
+                            st.session_state.relationships.append(relationship)
                             new_relationships += 1
                     
                     progress_bar.progress(100)
-                    status_text.text(f"✅ AI detected {new_relationships} new relationships!")
-                    st.success(f"✅ AI detected {new_relationships} new relationships!")
+                    status_text.text("✅ Detection completed!")
                     
-                    # Show the detected relationships
                     if new_relationships > 0:
-                        st.markdown("**🔍 Detected Relationships:**")
+                        st.markdown("**🔍 Validated Relationships Added:**")
                         for i, rel in enumerate(detected_relationships[-new_relationships:]):
-                            st.markdown(f"• **{rel['source_table']}.{rel['source_column']}** → **{rel['target_table']}.{rel['target_column']}** ({rel.get('relationship_type', 'One-to-Many')})")
+                            if rel.get('validated', False):
+                                st.markdown(f"• **{rel['source_table']}.{rel['source_column']}** → **{rel['target_table']}.{rel['target_column']}** ({rel.get('relationship_type', 'One-to-Many')})")
                         st.info("💡 These relationships are now available for editing in the 'Current Relationships' section below!")
-                    
-                    st.session_state[f"ai_detecting_relationships"] = False
-                    st.rerun()
                 else:
-                    progress_bar.progress(100)
-                    status_text.text("🤖 No relationships detected.")
-                    st.warning("🤖 AI couldn't detect any obvious relationships.")
-                    st.session_state[f"ai_detecting_relationships"] = False
-                    
-            except Exception as e:
-                progress_bar.progress(100)
-                status_text.text("❌ Detection failed.")
-                st.error(f"❌ Error in AI relationship detection: {str(e)}")
-                print(f"AI relationship detection error: {str(e)}")
+                    status_text.text("🤖 No valid relationships detected.")
+                    st.warning("🤖 AI couldn't detect any valid relationships. All suggested relationships had non-existent columns.")
+                    if invalid_relationships > 0:
+                        st.info(f"ℹ️ {invalid_relationships} relationships were suggested but filtered out due to invalid columns.")
+                
                 st.session_state[f"ai_detecting_relationships"] = False
-        
+                st.session_state[f"ai_detection_completed"] = True
+                st.rerun()
+            else:
+                progress_bar.progress(100)
+                status_text.text("🤖 No relationships detected.")
+                st.warning("🤖 AI couldn't detect any obvious relationships.")
+                # Completely stop detection - don't show completion UI
+                st.session_state[f"ai_detecting_relationships"] = False
+                st.session_state[f"ai_detection_started"] = False
+                st.session_state[f"ai_detection_completed"] = True  # Mark as completed even with no results
+                st.rerun()
+                
+        except Exception as e:
+            progress_bar.progress(100)
+            status_text.text("❌ Detection failed.")
+            st.error(f"❌ Error in AI relationship detection: {str(e)}")
+            print(f"AI relationship detection error: {str(e)}")
+            # Completely stop detection - don't show completion UI
+            st.session_state[f"ai_detecting_relationships"] = False
+            st.session_state[f"ai_detection_started"] = False
+            st.session_state[f"ai_detection_completed"] = True  # Mark as completed even with error
     
-    with col2:
-        st.subheader("📊 Current Relationships")
+    # Manual relationship creation
+    st.markdown("---")
+    st.markdown("**Manual Relationship Creation**")
+    
+    # Table selection
+    table1 = st.selectbox("Source Table", list(all_tables.keys()), key="rel_table1")
+    table2 = st.selectbox("Target Table", list(all_tables.keys()), key="rel_table2")
+    
+    if table1 and table2 and table1 != table2:
+        col1_col, col2_col = st.columns(2)
         
-        # Initialize relationships if not exists
-        if 'relationships' not in st.session_state:
-            st.session_state.relationships = []
+        with col1_col:
+            source_col = st.selectbox("Source Column", all_tables[table1].columns.tolist(), key="rel_source_col")
         
-        # Relationship count and search
-        rel_count = len(st.session_state.relationships)
-        if rel_count > 0:
-            # Count AI detected relationships
-            ai_detected_count = sum(1 for rel in st.session_state.relationships if 'confidence' in rel)
-            manual_count = rel_count - ai_detected_count
+        with col2_col:
+            target_col = st.selectbox("Target Column", all_tables[table2].columns.tolist(), key="rel_target_col")
+        
+        rel_type = st.selectbox("Relationship Type", ["One-to-One", "One-to-Many", "Many-to-One", "Many-to-Many"], key="rel_type")
+        
+        if st.button("➕ Add Relationship", key="add_manual_rel"):
+            if 'relationships' not in st.session_state:
+                st.session_state.relationships = []
             
+            new_rel = {
+                'source_table': table1,
+                'source_column': source_col,
+                'target_table': table2,
+                'target_column': target_col,
+                'type': rel_type
+            }
+            
+            # Check for duplicates
+            if new_rel not in st.session_state.relationships:
+                st.session_state.relationships.append(new_rel)
+                st.success(f"✅ Relationship added: {table1}.{source_col} → {table2}.{target_col} ({rel_type})")
+                st.rerun()
+            else:
+                st.warning("⚠️ This relationship already exists.")
+    
+    st.markdown("---")
+    
+    # Current Relationships section - moved below and improved
+    st.subheader("📊 Current Relationships")
+    
+    # Initialize relationships if not exists
+    if 'relationships' not in st.session_state:
+        st.session_state.relationships = []
+    
+    # Relationship count and search
+    rel_count = len(st.session_state.relationships)
+    if rel_count > 0:
+        # Count AI detected relationships
+        ai_detected_count = sum(1 for rel in st.session_state.relationships if 'confidence' in rel)
+        manual_count = rel_count - ai_detected_count
+        
+        # Improved relationship display with better layout
+        col1, col2 = st.columns([3, 1])
+        
+        with col1:
             st.markdown(f"**Total: {rel_count} relationship{'s' if rel_count != 1 else ''}**")
             if ai_detected_count > 0:
                 st.markdown(f"• 🤖 AI Detected: {ai_detected_count}")
             if manual_count > 0:
                 st.markdown(f"• ✋ Manual: {manual_count}")
-            
+        
+        with col2:
             # Search/filter functionality
             search_term = st.text_input(
                 "🔍 Search relationships",
@@ -2303,158 +2578,143 @@ def relationship_builder_tab():
                 placeholder="Search by table or column name...",
                 help="Filter relationships by table or column names"
             )
-            
-            # Filter relationships based on search
-            if search_term:
-                filtered_relationships = [
-                    rel for rel in st.session_state.relationships
-                    if (search_term.lower() in rel['source_table'].lower() or
-                        search_term.lower() in rel['target_table'].lower() or
-                        search_term.lower() in rel['source_column'].lower() or
-                        search_term.lower() in rel['target_column'].lower())
-                ]
-                st.info(f"Found {len(filtered_relationships)} relationship{'s' if len(filtered_relationships) != 1 else ''} matching '{search_term}'")
-            else:
-                filtered_relationships = st.session_state.relationships
-        else:
-            filtered_relationships = []
         
-        if filtered_relationships:
-            for i, rel in enumerate(filtered_relationships):
-                # Get the actual index in the original relationships list
-                original_index = st.session_state.relationships.index(rel)
-                
-                # Check if this is a recently detected relationship (has confidence field)
-                is_ai_detected = 'confidence' in rel
-                border_color = "#28a745" if is_ai_detected else "#e0e0e0"
-                bg_color = "#d4edda" if is_ai_detected else "#f8f9fa"
-                ai_badge = "🤖 AI Detected" if is_ai_detected else ""
-                
-                with st.container():
-                    col1, col2, col3 = st.columns([3, 1, 1])
-                    with col1:
-                        st.markdown(f"""
-                        <div style="border: 2px solid {border_color}; border-radius: 8px; padding: 12px; margin: 8px 0; background-color: {bg_color};">
-                            <strong>🔗 {rel['source_table']}.{rel['source_column']} → {rel['target_table']}.{rel['target_column']}</strong><br>
-                            <small style="color: #666;">Type: {rel['type']}</small>
-                            {f'<br><small style="color: #28a745; font-weight: bold;">{ai_badge}</small>' if ai_badge else ''}
+        # Filter relationships based on search
+        if search_term:
+            filtered_relationships = [
+                rel for rel in st.session_state.relationships
+                if (search_term.lower() in rel['source_table'].lower() or
+                    search_term.lower() in rel['target_table'].lower() or
+                    search_term.lower() in rel['source_column'].lower() or
+                    search_term.lower() in rel['target_column'].lower())
+            ]
+            st.info(f"Found {len(filtered_relationships)} relationship{'s' if len(filtered_relationships) != 1 else ''} matching '{search_term}'")
+        else:
+            filtered_relationships = st.session_state.relationships
+    else:
+        filtered_relationships = []
+    
+    # Display relationships in a more legible format
+    if filtered_relationships:
+        st.markdown("---")
+        
+        for i, rel in enumerate(filtered_relationships):
+            # Get the actual index in the original relationships list
+            original_index = st.session_state.relationships.index(rel)
+            
+            # Check if this is a recently detected relationship (has confidence field)
+            is_ai_detected = 'confidence' in rel
+            border_color = "#28a745" if is_ai_detected else "#e0e0e0"
+            bg_color = "#d4edda" if is_ai_detected else "#f8f9fa"
+            ai_badge = "🤖 AI Detected" if is_ai_detected else "✋ Manual"
+            
+            # Create a more legible relationship card
+            with st.container():
+                st.markdown(f"""
+                <div style="border: 2px solid {border_color}; border-radius: 8px; padding: 16px; margin: 12px 0; background-color: {bg_color};">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                        <h4 style="margin: 0; color: #333;">🔗 {rel['source_table']}.{rel['source_column']} → {rel['target_table']}.{rel['target_column']}</h4>
+                        <span style="background-color: {'#28a745' if is_ai_detected else '#6c757d'}; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold;">{ai_badge}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <strong>Type:</strong> {rel['type']}<br>
+                            <small style="color: #666;">Source: {rel['source_table']} | Target: {rel['target_table']}</small>
                         </div>
-                        """, unsafe_allow_html=True)
-                    with col2:
-                        if st.button("✏️", key=f"edit_rel_{original_index}", help="Edit this relationship"):
-                            st.session_state[f"editing_rel_{original_index}"] = True
-                            st.rerun()
-                    with col3:
-                        if st.button("🗑️", key=f"delete_rel_{original_index}", help="Delete this relationship"):
-                            st.session_state.relationships.pop(original_index)
-                            st.rerun()
-                
-                # Edit interface for this relationship
-                if st.session_state.get(f"editing_rel_{original_index}", False):
-                    with st.expander(f"✏️ Edit Relationship {original_index+1}", expanded=True):
-                        edit_relationship_interface(original_index, rel, all_tables)
-        else:
-            st.info("No relationships defined yet. Use AI detection or manual creation to add relationships.")
-        
-        # Bulk operations
-        if st.session_state.relationships:
-            st.markdown("---")
-            st.subheader("🔧 Bulk Operations")
+                        <div style="display: flex; gap: 8px;">
+                            <button onclick="editRelationship({original_index})" style="background: #007bff; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer;">✏️ Edit</button>
+                            <button onclick="deleteRelationship({original_index})" style="background: #dc3545; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer;">🗑️ Delete</button>
+                        </div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
             
-            col1, col2, col3 = st.columns(3)
+            # Action buttons using Streamlit
+            col1, col2, col3 = st.columns([1, 1, 8])
             
             with col1:
-                if st.button("🔄 Refresh All", key="refresh_all_relationships", help="Refresh all relationships"):
+                if st.button("✏️", key=f"edit_rel_{original_index}", help="Edit this relationship"):
+                    st.session_state[f"editing_rel_{original_index}"] = True
                     st.rerun()
             
             with col2:
-                if st.button("🗑️ Clear All", key="clear_all_relationships", help="Delete all relationships"):
-                    st.session_state.relationships = []
-                    st.success("✅ All relationships cleared!")
+                if st.button("🗑️", key=f"delete_rel_{original_index}", help="Delete this relationship"):
+                    st.session_state.relationships.pop(original_index)
                     st.rerun()
             
             with col3:
-                if st.button("📊 Export Relationships", key="export_relationships", help="Export relationships to JSON"):
-                    import json
-                    relationships_json = json.dumps(st.session_state.relationships, indent=2)
-                    st.download_button(
-                        label="📥 Download Relationships",
-                        data=relationships_json,
-                        file_name="relationships.json",
-                        mime="application/json"
-                    )
+                st.write("")  # Empty space for alignment
             
-            # Import relationships
-            st.markdown("**📤 Import Relationships**")
-            uploaded_file = st.file_uploader(
-                "Upload relationships JSON file",
-                type=['json'],
-                key="import_relationships_file",
-                help="Upload a JSON file containing relationships to import"
-            )
-            
-            if uploaded_file is not None:
-                try:
-                    import json
-                    imported_relationships = json.load(uploaded_file)
-                    
-                    if isinstance(imported_relationships, list):
-                        # Validate the structure
-                        valid_relationships = []
-                        for rel in imported_relationships:
-                            if all(key in rel for key in ['source_table', 'source_column', 'target_table', 'target_column', 'type']):
-                                valid_relationships.append(rel)
-                        
-                        if valid_relationships:
-                            # Add to existing relationships (avoid duplicates)
-                            added_count = 0
-                            for rel in valid_relationships:
-                                if rel not in st.session_state.relationships:
-                                    st.session_state.relationships.append(rel)
-                                    added_count += 1
-                            
-                            st.success(f"✅ Successfully imported {added_count} new relationships!")
-                            if added_count < len(valid_relationships):
-                                st.info(f"ℹ️ {len(valid_relationships) - added_count} relationships were already present and skipped.")
-                        else:
-                            st.error("❌ No valid relationships found in the uploaded file.")
-                    else:
-                        st.error("❌ Invalid file format. Expected a list of relationships.")
-                        
-                except Exception as e:
-                    st.error(f"❌ Error importing relationships: {str(e)}")
+            # Edit interface for this relationship
+            if st.session_state.get(f"editing_rel_{original_index}", False):
+                with st.expander(f"✏️ Edit Relationship {original_index+1}", expanded=True):
+                    edit_relationship_interface(original_index, rel, all_tables)
+    else:
+        st.info("No relationships defined yet. Use AI detection or manual creation to add relationships.")
     
-    # ER Diagram
+    # Bulk operations
     if st.session_state.relationships:
-        st.subheader("📈 Entity Relationship Diagram")
+        st.markdown("---")
+        st.subheader("🔧 Bulk Operations")
         
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            if st.button("🔄 Refresh All", key="refresh_all_relationships", help="Refresh all relationships"):
+                st.rerun()
+        
+        with col2:
+            if st.button("🗑️ Clear All", key="clear_all_relationships", help="Delete all relationships"):
+                st.session_state.relationships = []
+                st.success("✅ All relationships cleared!")
+                st.rerun()
+        
+        with col3:
+            if st.button("📊 Export Relationships", key="export_relationships", help="Export relationships to JSON"):
+                import json
+                relationships_json = json.dumps(st.session_state.relationships, indent=2)
+                st.download_button(
+                    label="📥 Download Relationships",
+                    data=relationships_json,
+                    file_name="relationships.json",
+                    mime="application/json"
+                )
+        
+        # Import relationships
+        st.markdown("**📤 Import Relationships**")
+        uploaded_file = st.file_uploader(
+            "Upload relationships JSON file",
+            type=['json'],
+            key="import_relationships_file",
+            help="Upload a JSON file containing relationships"
+        )
+        
+        if uploaded_file is not None:
+            try:
+                import json
+                relationships_data = json.load(uploaded_file)
+                if isinstance(relationships_data, list):
+                    st.session_state.relationships = relationships_data
+                    st.success(f"✅ Imported {len(relationships_data)} relationships!")
+                    st.rerun()
+                else:
+                    st.error("❌ Invalid JSON format. Expected a list of relationships.")
+            except Exception as e:
+                st.error(f"❌ Error importing relationships: {str(e)}")
+    
+    # ER Diagram section
+    st.markdown("---")
+    st.subheader("📊 Entity Relationship Diagram")
+    
+    if st.session_state.relationships:
         if st.button("🔄 Refresh Diagram", key="refresh_diagram_btn"):
             st.rerun()
         
         er_diagram = create_er_diagram(all_tables, st.session_state.relationships)
         if er_diagram:
             st.pyplot(er_diagram, width='stretch')
-    
-    # Navigation to next tab
-    st.markdown("---")
-    st.markdown("**🚀 Ready for the next step?**")
-    col_nav1, col_nav2, col_nav3 = st.columns([1, 1, 1])
-    
-    with col_nav1:
-        if st.button("💻 Go to Custom Queries", key="nav_relationships_to_queries", type="secondary", use_container_width=True):
-            st.session_state.navigate_to_tab = "queries"
-            st.rerun()
-    
-    with col_nav2:
-        if st.button("🤖 Go to AI Analysis", key="nav_relationships_to_ai", type="secondary", use_container_width=True):
-            st.session_state.navigate_to_tab = "ai"
-            st.rerun()
-    
-    with col_nav3:
-        if st.button("⚙️ Go to Settings", key="nav_relationships_to_settings", type="secondary", use_container_width=True):
-            st.session_state.navigate_to_tab = "settings"
-            st.rerun()
-
+    else:
+        st.info("No relationships defined yet. Create some relationships to see the ER diagram.")
 def ai_analysis_tab():
     """AI analysis tab with improved workflow and persistent SQL queries"""
     st.header("🤖 AI-Powered Analysis")
@@ -2493,8 +2753,11 @@ def ai_analysis_tab():
                         if st.session_state.data_processor.has_data():
                             all_tables['main'] = st.session_state.data_processor.get_data()
                         
-                        # Generate SQL query with all table information
-                        sql_query = st.session_state.llm_agent.generate_sql_query_with_tables(user_query, all_tables)
+                        # Get relationships for SQL generation
+                        relationships = st.session_state.get('relationships', [])
+                        
+                        # Generate SQL query with all table information and relationships
+                        sql_query = st.session_state.llm_agent.generate_sql_query_with_tables(user_query, all_tables, relationships)
                         
                         # Store SQL query
                         st.session_state.current_sql_query = sql_query
@@ -2774,6 +3037,7 @@ def ai_analysis_tab():
                             st.error("❌ ReportLab not available. Install with: pip install reportlab")
                     except Exception as e:
                         st.error(f"❌ Error creating PDF: {str(e)}")
+    
 
 
 def custom_queries_tab():
@@ -2870,15 +3134,39 @@ def custom_queries_tab():
     with col3:
         if st.button("📈 Basic Stats", key="stats_template_btn"):
             first_table = list(all_tables.keys())[0]
-            first_col = list(all_tables[first_table].columns)[0]
-            template = f"SELECT COUNT(*) as count, AVG({first_col}) as avg_value, MIN({first_col}) as min_value, MAX({first_col}) as max_value FROM {first_table};"
+            first_df = all_tables[first_table]
+            
+            # Find a numeric column for stats, or use COUNT only
+            numeric_cols = first_df.select_dtypes(include=['number']).columns.tolist()
+            
+            if numeric_cols:
+                # Use first numeric column for stats
+                stats_col = numeric_cols[0]
+                template = f"SELECT COUNT(*) as count, AVG({stats_col}) as avg_value, MIN({stats_col}) as min_value, MAX({stats_col}) as max_value FROM {first_table};"
+            else:
+                # No numeric columns, just use COUNT
+                template = f"SELECT COUNT(*) as count, COUNT(DISTINCT {first_df.columns[0]}) as unique_values FROM {first_table};"
+            
             st.session_state.current_sql_query = template
             st.rerun()
     
     with col4:
         if st.button("🔗 Join Tables", key="join_template_btn") and len(all_tables) > 1:
             tables = list(all_tables.keys())
-            template = f"SELECT * FROM {tables[0]} t1 JOIN {tables[1]} t2 ON t1.id = t2.id LIMIT 10;"
+            table1, table2 = tables[0], tables[1]
+            df1, df2 = all_tables[table1], all_tables[table2]
+            
+            # Find common columns for JOIN
+            common_cols = set(df1.columns) & set(df2.columns)
+            
+            if common_cols:
+                # Use first common column for JOIN
+                join_col = list(common_cols)[0]
+                template = f"SELECT * FROM {table1} t1 JOIN {table2} t2 ON t1.{join_col} = t2.{join_col} LIMIT 10;"
+            else:
+                # No common columns, create a simple cross join
+                template = f"SELECT * FROM {table1} t1 CROSS JOIN {table2} t2 LIMIT 10;"
+            
             st.session_state.current_sql_query = template
             st.rerun()
     
@@ -3071,24 +3359,6 @@ def custom_queries_tab():
             st.rerun()
     
     # Navigation to next tab
-    st.markdown("---")
-    st.markdown("**🚀 Ready for the next step?**")
-    col_nav1, col_nav2, col_nav3 = st.columns([1, 1, 1])
-    
-    with col_nav1:
-        if st.button("🤖 Go to AI Analysis", key="nav_queries_to_ai", type="secondary", use_container_width=True):
-            st.session_state.navigate_to_tab = "ai"
-            st.rerun()
-    
-    with col_nav2:
-        if st.button("📄 Go to Insights", key="nav_queries_to_insights", type="secondary", use_container_width=True):
-            st.session_state.navigate_to_tab = "insights"
-            st.rerun()
-    
-    with col_nav3:
-        if st.button("⚙️ Go to Settings", key="nav_queries_to_settings", type="secondary", use_container_width=True):
-            st.session_state.navigate_to_tab = "settings"
-            st.rerun()
     
 
 def insights_tab():
@@ -3244,6 +3514,7 @@ def insights_tab():
         if st.button("🗑️ Clear All Insights", type="secondary", key="clear_insights_btn_2"):
             st.session_state.insights_history = []
             st.rerun()
+    
 
 def settings_tab():
     """Settings and configuration tab"""
@@ -3262,6 +3533,7 @@ def settings_tab():
         
         if OLLAMA_AVAILABLE:
             available_models = get_available_models()
+            missing_models = get_missing_models()
             
             col1, col2 = st.columns(2)
             
@@ -3272,13 +3544,42 @@ def settings_tab():
                         st.write(f"• {model}")
                 else:
                     st.warning("No models found")
+                
+                # Show missing models
+                if missing_models:
+                    st.markdown("---")
+                    st.write(f"**Missing Recommended Models:** {len(missing_models)}")
+                    for model in missing_models[:5]:  # Show first 5
+                        st.write(f"• {model}")
+                    if len(missing_models) > 5:
+                        st.write(f"... and {len(missing_models) - 5} more")
             
             with col2:
                 if st.button("🔄 Refresh Model List", key="refresh_models_btn"):
                     st.rerun()
                 
-                if st.button("📥 Open Model Setup", key="open_model_setup_btn"):
+                if st.button("📥 Download Commands", key="download_commands_btn"):
+                    if missing_models:
+                        download_commands = generate_download_commands(missing_models)
+                        st.code("\n".join(download_commands), language="bash")
+                    else:
+                        st.info("All recommended models are already available!")
+                
+                if st.button("⚙️ Open Model Setup", key="open_model_setup_btn"):
                     st.info("Run `python setup_models.py` in your terminal")
+                
+                # Debug section
+                with st.expander("🔍 Debug Information", expanded=False):
+                    if st.button("🔍 Test Model Detection", key="test_model_detection_btn"):
+                        test_result = test_model_detection()
+                        if test_result["status"] == "success":
+                            st.success(f"✅ Model detection working! Found {test_result['models_found']} models.")
+                            st.write("**Detected models:**")
+                            for model in test_result["models"]:
+                                st.write(f"• {model}")
+                        else:
+                            st.error(f"❌ Model detection failed: {test_result['error']}")
+                        st.write(f"**Ollama Available:** {test_result['ollama_available']}")
         else:
             st.error("Ollama configuration not available")
     
@@ -3472,6 +3773,7 @@ def settings_tab():
             st.write("• ✅ AI Analysis Ready")
             st.write("• ✅ Data Processing Active")
             st.write("• ✅ Visualization Ready")
+    
 
 if __name__ == "__main__":
     main()

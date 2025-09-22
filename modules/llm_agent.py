@@ -380,8 +380,8 @@ Provide specific recommendations for customer engagement and retention.
         except Exception as e:
             return f"SELECT * FROM data LIMIT 10; -- Error generating SQL: {str(e)}"
 
-    def generate_sql_query_with_tables(self, question: str, tables: Dict[str, pd.DataFrame]) -> str:
-        """Generate SQL query from natural language question using multiple tables"""
+    def generate_sql_query_with_tables(self, question: str, tables: Dict[str, pd.DataFrame], relationships: List[Dict] = None) -> str:
+        """Generate SQL query from natural language question using multiple tables and relationships"""
         try:
             # Prepare table information
             table_info = {}
@@ -402,8 +402,27 @@ Provide specific recommendations for customer engagement and retention.
                     'row_count': len(df),
                     'numeric_columns': numeric_cols,
                     'text_columns': text_cols,
-                    'datetime_columns': datetime_cols
+                    'datetime_columns': datetime_cols,
+                    'column_info': {
+                        col: {
+                            'type': str(dtypes[col]),
+                            'is_numeric': col in numeric_cols,
+                            'is_text': col in text_cols,
+                            'is_datetime': col in datetime_cols
+                        } for col in columns
+                    }
                 }
+            
+            # Prepare relationships information
+            relationships_info = ""
+            if relationships:
+                relationships_info = f"""
+            
+            Table Relationships:
+            {json.dumps(relationships, indent=2)}
+            
+            Use these relationships to create proper JOINs when the question requires data from multiple tables.
+            """
             
             # Create comprehensive SQL generation prompt
             prompt = f"""
@@ -412,7 +431,7 @@ Provide specific recommendations for customer engagement and retention.
             Question: {question}
             
             Available Tables:
-            {json.dumps(table_info, indent=2, default=str)}
+            {json.dumps(table_info, indent=2, default=str)}{relationships_info}
             
             Instructions:
             1. Use the ACTUAL table names provided (not generic names like 'data')
@@ -421,14 +440,28 @@ Provide specific recommendations for customer engagement and retention.
             4. Use proper SQL syntax for DuckDB
             5. Handle data types correctly based on the column types shown
             6. Use JOINs if the question requires data from multiple tables
-            7. Use appropriate WHERE, GROUP BY, ORDER BY, and LIMIT clauses
-            8. ONLY add filters that are explicitly mentioned in the question
-            9. Focus on the core question without unnecessary filtering
+            7. Use the provided relationships to create proper JOINs between tables
+            8. Use appropriate WHERE, GROUP BY, ORDER BY, and LIMIT clauses
+            9. ONLY add filters that are explicitly mentioned in the question
+            10. Focus on the core question without unnecessary filtering
+            
+            CRITICAL DATA TYPE RULES:
+            - AVG(), SUM(), MIN(), MAX() only work on NUMERIC columns (int, float, decimal)
+            - COUNT() works on any column type
+            - For VARCHAR/TEXT columns, use COUNT() instead of AVG()
+            - For date/time columns, use appropriate date functions
+            - Check column data types before using aggregate functions
+            - Look at the 'column_info' section to see which columns are numeric vs text
+            - If a column is marked as 'is_text': true, do NOT use AVG() or SUM() on it
+            - If a column is marked as 'is_numeric': true, you can use AVG(), SUM(), MIN(), MAX()
             
             Examples of good table usage:
             - If asking about "sales by product", use the actual table name like "sales" or "products"
             - If asking about "customer data", use the actual table name like "customers" or "customer_info"
             - Use actual column names like "product_name", "sales_amount", "customer_id", etc.
+            - Use relationships to JOIN tables: table1.column = table2.column
+            - For basic stats on VARCHAR columns: SELECT COUNT(*) as count, COUNT(DISTINCT column_name) as unique_count
+            - For basic stats on NUMERIC columns: SELECT COUNT(*) as count, AVG(column_name) as avg_value, MIN(column_name) as min_value, MAX(column_name) as max_value
             
             Return ONLY the SQL query, no explanations.
             """
@@ -476,105 +509,290 @@ Provide specific recommendations for customer engagement and retention.
             return f"-- Error generating SQL insights: {str(e)}"
     
     def detect_relationships(self, tables: Dict[str, pd.DataFrame]) -> List[Dict]:
-        """Detect potential relationships between tables using AI based on structure only"""
+        """Detect potential relationships between tables using column name matching first, then AI with sample data"""
         try:
-            # Prepare table information - only structural data, no sample data
-            table_info = {}
-            for table_name, df in tables.items():
-                # Get column information
-                columns = list(df.columns)
-                dtypes = {col: str(dtype) for col, dtype in df.dtypes.items()}
-                
-                # Categorize columns by type
-                numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
-                text_cols = df.select_dtypes(include=['object', 'string']).columns.tolist()
-                datetime_cols = df.select_dtypes(include=['datetime64']).columns.tolist()
-                
-                # Identify potential key columns
-                potential_keys = []
-                for col in columns:
-                    col_lower = col.lower()
-                    # Look for common key patterns
-                    if any(pattern in col_lower for pattern in ['id', 'key', 'pk', 'primary']):
-                        potential_keys.append(col)
-                    elif col_lower in ['id']:  # Simple 'id' column
-                        potential_keys.append(col)
-                
-                table_info[table_name] = {
-                    'table_name': table_name,
-                    'columns': columns,
-                    'dtypes': dtypes,
-                    'row_count': len(df),
-                    'numeric_columns': numeric_cols,
-                    'text_columns': text_cols,
-                    'datetime_columns': datetime_cols,
-                    'potential_keys': potential_keys
-                }
+            print("Starting enhanced relationship detection...")
             
-            # Create relationship detection prompt focused on structure
-            prompt = f"""
-            Analyze these database tables and suggest potential relationships based on their structure.
+            # Step 1: Check for matching column names between tables
+            direct_relationships = self._find_direct_column_matches(tables)
+            print(f"Found {len(direct_relationships)} direct column matches")
             
-            Table Structure:
-            {json.dumps(table_info, indent=2)}
+            # Step 2: If no direct matches found, use AI with sample data
+            ai_relationships = []
+            if not direct_relationships:
+                print("No direct matches found, using AI with sample data...")
+                ai_relationships = self._detect_relationships_with_ai(tables)
+                print(f"AI found {len(ai_relationships)} relationships")
             
-            Based on table names, column names, data types, and potential key columns, suggest relationships in this format:
-            [
-                {{
-                    "source_table": "table1",
-                    "target_table": "table2", 
-                    "source_column": "id",
-                    "target_column": "table1_id",
-                    "relationship_type": "One-to-Many",
-                    "confidence": "High",
-                    "reasoning": "Column naming pattern suggests foreign key relationship"
-                }}
-            ]
+            # Combine and validate all relationships
+            all_relationships = direct_relationships + ai_relationships
+            validated_relationships = self._validate_relationships(all_relationships, tables)
             
-            Focus on:
-            - Primary key to foreign key relationships (id, _id, _key columns)
-            - Common naming patterns (customer_id, product_id, user_id, etc.)
-            - Data type compatibility (matching types between keys)
-            - Logical business relationships based on table/column names
-            - Potential keys identified in each table
+            print(f"Total validated relationships: {len(validated_relationships)}")
+            return validated_relationships
             
-            Examples of good relationships:
-            - users.id → orders.user_id (One-to-Many)
-            - products.id → order_items.product_id (One-to-Many)
-            - categories.id → products.category_id (One-to-Many)
-            - customers.id → orders.customer_id (One-to-Many)
-            
-            IMPORTANT: Return ONLY the JSON array. Do not include any explanatory text, comments, or other content. Start your response with [ and end with ].
-            """
-            
-            response = self._call_ollama_api(prompt)
-            
-            # Parse JSON response - handle cases where AI adds extra text
-            try:
-                # First try direct JSON parsing
-                relationships = json.loads(response)
-                return relationships if isinstance(relationships, list) else []
-            except json.JSONDecodeError:
-                # Try to extract JSON from response if AI added extra text
-                try:
-                    # Look for JSON array pattern in the response
-                    import re
-                    json_match = re.search(r'\[.*\]', response, re.DOTALL)
-                    if json_match:
-                        json_str = json_match.group(0)
-                        relationships = json.loads(json_str)
-                        return relationships if isinstance(relationships, list) else []
-                    else:
-                        print(f"Could not find JSON array in response: {response[:200]}...")
-                        return []
-                except (json.JSONDecodeError, AttributeError) as parse_err:
-                    print(f"JSON parsing error in relationship detection: {str(parse_err)}")
-                    print(f"Response was: {response[:200]}...")
-                    return []
-                
         except Exception as e:
             print(f"Error detecting relationships: {str(e)}")
             return []
+    
+    def _find_direct_column_matches(self, tables: Dict[str, pd.DataFrame]) -> List[Dict]:
+        """Find relationships based on matching column names between tables"""
+        relationships = []
+        table_names = list(tables.keys())
+        
+        for i, table1_name in enumerate(table_names):
+            for j, table2_name in enumerate(table_names):
+                if i >= j:  # Avoid duplicate comparisons
+                    continue
+                
+                df1, df2 = tables[table1_name], tables[table2_name]
+                
+                # Get lowercase column names for comparison
+                cols1_lower = {col.lower(): col for col in df1.columns}
+                cols2_lower = {col.lower(): col for col in df2.columns}
+                
+                # Find matching column names (case-insensitive)
+                common_cols = set(cols1_lower.keys()) & set(cols2_lower.keys())
+                
+                for common_col in common_cols:
+                    actual_col1 = cols1_lower[common_col]
+                    actual_col2 = cols2_lower[common_col]
+                    
+                    # Check if both columns have compatible data types
+                    if self._are_columns_compatible(df1[actual_col1], df2[actual_col2]):
+                        # Determine relationship type based on uniqueness
+                        rel_type = self._determine_relationship_type(df1[actual_col1], df2[actual_col2])
+                        
+                        relationship = {
+                            'source_table': table1_name,
+                            'target_table': table2_name,
+                            'source_column': actual_col1,
+                            'target_column': actual_col2,
+                            'relationship_type': rel_type,
+                            'confidence': 'High',
+                            'reasoning': f'Direct column name match: {actual_col1} = {actual_col2}',
+                            'detection_method': 'direct_match'
+                        }
+                        relationships.append(relationship)
+        
+        return relationships
+    
+    def _are_columns_compatible(self, col1: pd.Series, col2: pd.Series) -> bool:
+        """Check if two columns are compatible for relationship"""
+        # Check data type compatibility
+        if col1.dtype != col2.dtype:
+            # Allow some type conversions
+            if not self._are_types_compatible(col1.dtype, col2.dtype):
+                return False
+        
+        # Check if both columns have reasonable data
+        if col1.isna().all() or col2.isna().all():
+            return False
+            
+        return True
+    
+    def _are_types_compatible(self, dtype1, dtype2) -> bool:
+        """Check if two data types are compatible for relationships"""
+        # Numeric types are compatible
+        if pd.api.types.is_numeric_dtype(dtype1) and pd.api.types.is_numeric_dtype(dtype2):
+            return True
+        
+        # String types are compatible
+        if pd.api.types.is_string_dtype(dtype1) and pd.api.types.is_string_dtype(dtype2):
+            return True
+        
+        # Same exact type
+        if dtype1 == dtype2:
+            return True
+            
+        return False
+    
+    def _determine_relationship_type(self, col1: pd.Series, col2: pd.Series) -> str:
+        """Determine relationship type based on column uniqueness"""
+        # Check uniqueness (approximate)
+        unique1 = col1.nunique()
+        unique2 = col2.nunique()
+        total1 = len(col1)
+        total2 = len(col2)
+        
+        # If one column has mostly unique values, it's likely the primary key
+        if unique1 / total1 > 0.8 and unique2 / total2 < 0.8:
+            return "One-to-Many"  # col1 -> col2
+        elif unique2 / total2 > 0.8 and unique1 / total1 < 0.8:
+            return "Many-to-One"  # col1 -> col2
+        elif unique1 / total1 > 0.8 and unique2 / total2 > 0.8:
+            return "One-to-One"
+        else:
+            return "Many-to-Many"
+    
+    def _detect_relationships_with_ai(self, tables: Dict[str, pd.DataFrame]) -> List[Dict]:
+        """Use AI to detect relationships with sample data"""
+        # Prepare table information with sample data
+        table_info = {}
+        for table_name, df in tables.items():
+            # Get column information
+            columns = list(df.columns)
+            dtypes = {col: str(dtype) for col, dtype in df.dtypes.items()}
+            
+            # Categorize columns by type
+            numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
+            text_cols = df.select_dtypes(include=['object', 'string']).columns.tolist()
+            datetime_cols = df.select_dtypes(include=['datetime64']).columns.tolist()
+            
+            # Get sample data (5-10 records)
+            sample_size = min(10, len(df))
+            sample_data = df.head(sample_size).to_dict('records')
+            
+            # Identify potential key columns
+            potential_keys = []
+            for col in columns:
+                col_lower = col.lower()
+                # Look for common key patterns
+                if any(pattern in col_lower for pattern in ['id', 'key', 'pk', 'primary']):
+                    potential_keys.append(col)
+                elif col_lower in ['id']:  # Simple 'id' column
+                    potential_keys.append(col)
+            
+            table_info[table_name] = {
+                'table_name': table_name,
+                'columns': columns,
+                'dtypes': dtypes,
+                'row_count': len(df),
+                'numeric_columns': numeric_cols,
+                'text_columns': text_cols,
+                'datetime_columns': datetime_cols,
+                'potential_keys': potential_keys,
+                'sample_data': sample_data  # Include sample data for AI analysis
+            }
+            
+        # Create relationship detection prompt with sample data
+        prompt = f"""
+        Analyze these database tables and suggest potential relationships based on their structure and sample data.
+        
+        Table Structure and Sample Data:
+        {json.dumps(table_info, indent=2, default=str)}
+        
+        CRITICAL: You MUST only use column names that actually exist in the tables shown above. Do not invent or suggest column names that are not present in the table structure.
+        
+        Based on table names, column names, data types, potential key columns, and sample data, suggest relationships in this format:
+        [
+            {{
+                "source_table": "table1",
+                "target_table": "table2", 
+                "source_column": "id",
+                "target_column": "table1_id",
+                "relationship_type": "One-to-Many",
+                "confidence": "High",
+                "reasoning": "Column naming pattern suggests foreign key relationship"
+            }}
+        ]
+        
+        VALID RELATIONSHIP TYPES (use only these):
+        - "One-to-One": Each record in one table matches exactly one record in another
+        - "One-to-Many": One record can match many records in another table
+        - "Many-to-One": Many records can match one record in another table  
+        - "Many-to-Many": Records can have multiple matches in both directions
+        
+        Focus on:
+        - Primary key to foreign key relationships (id, _id, _key columns)
+        - Common naming patterns (customer_id, product_id, user_id, etc.)
+        - Data type compatibility (matching types between keys)
+        - Logical business relationships based on table/column names
+        - Potential keys identified in each table
+        - Sample data patterns that suggest relationships
+        
+        VALIDATION RULES:
+        1. source_table and target_table must exist in the table list above
+        2. source_column must exist in the source_table's columns
+        3. target_column must exist in the target_table's columns
+        4. Only suggest relationships between tables that have logical connections
+        5. Use exact column names as they appear in the table structure
+        6. relationship_type MUST be one of: "One-to-One", "One-to-Many", "Many-to-One", "Many-to-Many"
+        7. DO NOT use invalid relationship types like "Many-to-None", "None-to-Many", etc.
+        
+        Examples of good relationships (only if these exact columns exist):
+        - users.id → orders.user_id (One-to-Many)
+        - products.id → order_items.product_id (One-to-Many)
+        - categories.id → products.category_id (One-to-Many)
+        - customers.id → orders.customer_id (One-to-Many)
+        
+        IMPORTANT: Return ONLY the JSON array. Do not include any explanatory text, comments, or other content. Start your response with [ and end with ].
+        """
+        
+        response = self._call_ollama_api(prompt)
+        
+        # Parse JSON response - handle cases where AI adds extra text
+        try:
+            # First try direct JSON parsing
+            relationships = json.loads(response)
+            if not isinstance(relationships, list):
+                return []
+        except json.JSONDecodeError:
+            # Try to extract JSON from response if AI added extra text
+            try:
+                # Look for JSON array pattern in the response
+                import re
+                json_match = re.search(r'\[.*\]', response, re.DOTALL)
+                if json_match:
+                    json_str = json_match.group(0)
+                    relationships = json.loads(json_str)
+                else:
+                    print(f"Could not find JSON array in response: {response[:200]}...")
+                    return []
+            except (json.JSONDecodeError, AttributeError) as parse_err:
+                print(f"JSON parsing error in relationship detection: {str(parse_err)}")
+                print(f"Response was: {response[:200]}...")
+                return []
+        
+        return relationships if isinstance(relationships, list) else []
+    
+    def _validate_relationships(self, relationships: List[Dict], tables: Dict[str, pd.DataFrame]) -> List[Dict]:
+        """Validate relationships against actual table columns"""
+        validated_relationships = []
+        for rel in relationships:
+            if not isinstance(rel, dict):
+                continue
+                
+            # Check if all required fields exist
+            required_fields = ['source_table', 'target_table', 'source_column', 'target_column']
+            if not all(field in rel for field in required_fields):
+                continue
+            
+            source_table = rel['source_table']
+            target_table = rel['target_table']
+            source_column = rel['source_column']
+            target_column = rel['target_column']
+            
+            # Validate that tables exist
+            if source_table not in tables or target_table not in tables:
+                continue
+            
+            # Validate that columns exist in their respective tables
+            source_columns = list(tables[source_table].columns)
+            target_columns = list(tables[target_table].columns)
+            
+            if source_column not in source_columns or target_column not in target_columns:
+                print(f"Skipping invalid relationship: {source_table}.{source_column} -> {target_table}.{target_column}")
+                print(f"Available columns in {source_table}: {source_columns}")
+                print(f"Available columns in {target_table}: {target_columns}")
+                continue
+            
+            # Validate relationship type
+            valid_relationship_types = ['One-to-One', 'One-to-Many', 'Many-to-One', 'Many-to-Many']
+            relationship_type = rel.get('relationship_type', 'One-to-Many')
+            
+            if relationship_type not in valid_relationship_types:
+                print(f"Skipping invalid relationship type: {relationship_type}")
+                print(f"Valid types are: {valid_relationship_types}")
+                continue
+            
+            # Add validation info to the relationship
+            rel['validated'] = True
+            rel['validation_note'] = "Column existence and relationship type verified"
+            validated_relationships.append(rel)
+        
+        print(f"AI suggested {len(relationships)} relationships, validated {len(validated_relationships)} as valid")
+        return validated_relationships
 
     def analyze_query_results(self, question: str, results: pd.DataFrame, source_tables: Dict = None) -> str:
         """Analyze SQL query results and provide enhanced insights using source tables"""

@@ -22,6 +22,31 @@ class DataProcessor:
         self.memory_usage = 0
         self.loaded_tables = {}
         
+    def sanitize_name(self, name: str) -> str:
+        """Sanitize table/column name for SQL compatibility by replacing spaces with underscores"""
+        if not name:
+            return name
+        
+        import re
+        
+        # Replace spaces with underscores
+        sanitized = name.strip().replace(' ', '_')
+        
+        # Remove any other problematic characters
+        sanitized = re.sub(r'[^a-zA-Z0-9_]', '_', sanitized)
+        
+        # Ensure it starts with letter or underscore
+        if sanitized and not re.match(r'^[a-zA-Z_]', sanitized):
+            sanitized = f"_{sanitized}"
+        
+        # Remove consecutive underscores
+        sanitized = re.sub(r'_+', '_', sanitized)
+        
+        # Remove leading/trailing underscores
+        sanitized = sanitized.strip('_')
+        
+        return sanitized
+
     def load_excel_data(self, file_upload) -> bool:
         """
         Load data from uploaded file (supports Excel, CSV, and other formats)
@@ -56,6 +81,9 @@ class DataProcessor:
                     # If CSV fails, try Excel
                     self.data = pd.read_excel(file_upload)
             
+            # Sanitize column names for SQL compatibility
+            self.data.columns = [self.sanitize_name(col) for col in self.data.columns]
+            
             self.data_name = file_upload.name
             self._update_memory_usage()
             self._register_data_in_duckdb()
@@ -85,6 +113,8 @@ class DataProcessor:
             sales_file = os.path.join(demo_data_path, 'sales.xlsx')
             if os.path.exists(sales_file):
                 sales_df = pd.read_excel(sales_file, sheet_name='Sheet1')
+                # Sanitize column names
+                sales_df.columns = [self.sanitize_name(col) for col in sales_df.columns]
                 self.loaded_tables['sales'] = sales_df
                 print(f"Loaded sales data: {sales_df.shape[0]} rows × {sales_df.shape[1]} columns")
             
@@ -92,6 +122,8 @@ class DataProcessor:
             web_traffic_file = os.path.join(demo_data_path, 'web_traffic.xlsx')
             if os.path.exists(web_traffic_file):
                 web_traffic_df = pd.read_excel(web_traffic_file, sheet_name='Sheet1')
+                # Sanitize column names
+                web_traffic_df.columns = [self.sanitize_name(col) for col in web_traffic_df.columns]
                 self.loaded_tables['web_traffic'] = web_traffic_df
                 print(f"Loaded web traffic data: {web_traffic_df.shape[0]} rows × {web_traffic_df.shape[1]} columns")
             
