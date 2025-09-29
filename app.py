@@ -1975,57 +1975,73 @@ def data_load_tab():
     )
     
     if uploaded_file is not None:
-        file_extension = uploaded_file.name.lower().split('.')[-1]
+        # Check if this file has already been processed to avoid reloading on rerun
+        file_processed_key = f"file_processed_{uploaded_file.name}_{uploaded_file.size}"
         
-        if file_extension in ['xlsx', 'xls', 'xlsm', 'xlsb']:
-            # Multi-sheet Excel file
-            with st.spinner("Loading all sheets..."):
-                try:
-                    loaded_tables = load_multi_sheet_excel(uploaded_file)
-                    if loaded_tables:
-                        # Merge Excel data with existing tables instead of replacing
-                        if 'loaded_tables' not in st.session_state:
-                            st.session_state.loaded_tables = {}
-                        
-                        # Add Excel tables with a prefix to avoid conflicts
-                        excel_prefix = f"excel_{uploaded_file.name.split('.')[0]}_"
-                        tables_added = 0
-                        tables_updated = 0
-                        
-                        for table_name, table_data in loaded_tables.items():
-                            prefixed_name = f"{excel_prefix}{table_name}"
-                            if prefixed_name in st.session_state.loaded_tables:
-                                tables_updated += 1
+        if file_processed_key not in st.session_state:
+            file_extension = uploaded_file.name.lower().split('.')[-1]
+            
+            if file_extension in ['xlsx', 'xls', 'xlsm', 'xlsb']:
+                # Multi-sheet Excel file
+                with st.spinner("Loading all sheets..."):
+                    try:
+                        loaded_tables = load_multi_sheet_excel(uploaded_file)
+                        if loaded_tables:
+                            # Merge Excel data with existing tables instead of replacing
+                            if 'loaded_tables' not in st.session_state:
+                                st.session_state.loaded_tables = {}
+                            
+                            # Add Excel tables with a prefix to avoid conflicts
+                            # Sanitize the file name for SQL compatibility
+                            file_name_without_ext = uploaded_file.name.split('.')[0]
+                            sanitized_file_name = sanitize_name(file_name_without_ext)
+                            excel_prefix = f"excel_{sanitized_file_name}_"
+                            
+                            # Show info if file name was sanitized
+                            if sanitized_file_name != file_name_without_ext:
+                                st.info(f"📝 File name '{file_name_without_ext}' sanitized to '{sanitized_file_name}' for SQL compatibility")
+                            tables_added = 0
+                            tables_updated = 0
+                            
+                            for table_name, table_data in loaded_tables.items():
+                                # Table name is already sanitized by load_multi_sheet_excel function
+                                prefixed_name = f"{excel_prefix}{table_name}"
+                                
+                                if prefixed_name in st.session_state.loaded_tables:
+                                    tables_updated += 1
+                                else:
+                                    tables_added += 1
+                                st.session_state.loaded_tables[prefixed_name] = table_data
+                            
+                            if tables_updated > 0:
+                                st.success(f"✅ Excel file reloaded! {tables_updated} sheets updated, {tables_added} new sheets added. Total tables: {len(st.session_state.loaded_tables)}")
                             else:
-                                tables_added += 1
-                            st.session_state.loaded_tables[prefixed_name] = table_data
-                        
-                        if tables_updated > 0:
-                            st.success(f"✅ Excel file reloaded! {tables_updated} sheets updated, {tables_added} new sheets added. Total tables: {len(st.session_state.loaded_tables)}")
+                                st.success(f"✅ Loaded {len(loaded_tables)} sheets successfully! Total tables: {len(st.session_state.loaded_tables)}")
+                            
+                            # Show loaded sheets
+                            for sheet_name, df in loaded_tables.items():
+                                st.write(f"**{sheet_name}**: {df.shape[0]} rows × {df.shape[1]} columns")
                         else:
-                            st.success(f"✅ Loaded {len(loaded_tables)} sheets successfully! Total tables: {len(st.session_state.loaded_tables)}")
-                        
-                        # Show loaded sheets
-                        for sheet_name, df in loaded_tables.items():
-                            st.write(f"**{sheet_name}**: {df.shape[0]} rows × {df.shape[1]} columns")
-                    else:
-                        st.warning("⚠️ No data found in the Excel file")
+                            st.warning("⚠️ No data found in the Excel file")
+                    except Exception as e:
+                        st.error(f"❌ Error loading Excel file: {str(e)}")
+            else:
+                # Single file (CSV, etc.)
+                try:
+                    with st.spinner("Processing file..."):
+                        st.session_state.data_processor.load_excel_data(uploaded_file)
+                    st.success("✅ Data loaded successfully!")
                 except Exception as e:
-                    st.error(f"❌ Error loading Excel file: {str(e)}")
-        else:
-            # Single file (CSV, etc.)
-            try:
-                with st.spinner("Processing file..."):
-                    st.session_state.data_processor.load_excel_data(uploaded_file)
-                st.success("✅ Data loaded successfully!")
-            except Exception as e:
-                st.error(f"❌ Error loading data: {str(e)}")
+                    st.error(f"❌ Error loading data: {str(e)}")
+            
+            # Mark this file as processed
+            st.session_state[file_processed_key] = True
     
     # Add Clear All Data button
     if st.session_state.loaded_tables or st.session_state.data_processor.has_data():
         st.markdown("---")
-        col1, col2, col3 = st.columns([1, 1, 1])
-        with col2:
+        col1, col2 = st.columns([1, 1])
+        with col1:
             if st.button("🗑️ Clear All Data", key="clear_all_data", type="secondary"):
                 # Clear all loaded tables
                 st.session_state.loaded_tables = {}
@@ -2034,7 +2050,17 @@ def data_load_tab():
                 # Clear file uploader by resetting the session state
                 if 'main_upload' in st.session_state:
                     del st.session_state['main_upload']
-                st.success("✅ All data cleared successfully!")
+                # Clear all table-related states
+                keys_to_remove = [key for key in st.session_state.keys() if any(
+                    key.startswith(prefix) for prefix in ['editing_table_', 'edited_df_', 'renaming_', 'expander_open_', 'file_processed_']
+                )]
+                for key in keys_to_remove:
+                    del st.session_state[key]
+                st.success("✅ All data and file uploader cleared successfully!")
+                st.rerun()
+        
+        with col2:
+            if st.button("🔄 Refresh Page", key="refresh_page", type="secondary"):
                 st.rerun()
     
     with col2:
@@ -2073,7 +2099,10 @@ def data_load_tab():
                         tables_updated = 0
                         
                         for table_name, table_data in loaded_tables.items():
-                            prefixed_name = f"{sample_prefix}{table_name}"
+                            # Sanitize the table name for SQL compatibility
+                            sanitized_table_name = sanitize_name(table_name)
+                            prefixed_name = f"{sample_prefix}{sanitized_table_name}"
+                            
                             if prefixed_name in st.session_state.loaded_tables:
                                 tables_updated += 1
                             else:
@@ -2108,15 +2137,21 @@ def data_load_tab():
         with col2:
             if st.button("🆕 Create Table", key="powerbi_create_btn", type="primary"):
                 if table_name:
-                    # Validate table name
-                    is_valid, message = validate_table_name(table_name)
+                    # Auto-sanitize table name for SQL compatibility
+                    original_name = table_name
+                    sanitized_table_name = sanitize_name(table_name)
+                    
+                    # Validate sanitized table name
+                    is_valid, message = validate_table_name(sanitized_table_name)
                     if not is_valid:
                         st.error(f"❌ {message}")
-                        # Auto-suggest sanitized name
-                        if ' ' in table_name:
-                            sanitized = sanitize_name(table_name)
-                            st.info(f"💡 Try using: '{sanitized}'")
                     else:
+                        # Use sanitized name
+                        table_name = sanitized_table_name
+                        
+                        # Show info if name was changed
+                        if sanitized_table_name != original_name:
+                            st.info(f"📝 Table name sanitized from '{original_name}' to '{sanitized_table_name}' for SQL compatibility")
                         # Check for duplicates
                         all_tables = {}
                         if hasattr(st.session_state, 'loaded_tables'):
@@ -2199,9 +2234,16 @@ def data_load_tab():
                                 del st.session_state.loaded_tables[table_name]
                                 st.success(f"✅ Table '{table_name}' deleted successfully!")
                                 
-                                # If this was the last table from an uploaded file, clear the file uploader
-                                if not st.session_state.loaded_tables and 'main_upload' in st.session_state:
-                                    del st.session_state['main_upload']
+                                # Clear any editing states for this table
+                                if f"editing_table_{table_name}" in st.session_state:
+                                    del st.session_state[f"editing_table_{table_name}"]
+                                if f"edited_df_{table_name}" in st.session_state:
+                                    del st.session_state[f"edited_df_{table_name}"]
+                                if f"renaming_{table_name}" in st.session_state:
+                                    del st.session_state[f"renaming_{table_name}"]
+                                
+                                # Don't clear file uploader state - let user manage it manually
+                                # This allows users to delete tables without losing their uploaded file
                                     
                             # Also clear from data_processor if it's the main table
                             elif table_name == 'main':
@@ -2232,7 +2274,9 @@ def data_load_tab():
                                 if new_name and new_name != table_name:
                                     is_valid, message = validate_table_name(new_name)
                                     if is_valid:
-                                        is_unique, dup_message = check_duplicate_table_name(new_name, all_tables)
+                                        # Create a copy of all_tables without the current table being renamed
+                                        tables_to_check = {k: v for k, v in all_tables.items() if k != table_name}
+                                        is_unique, dup_message = check_duplicate_table_name(new_name, tables_to_check)
                                         if is_unique:
                                             # Get the table data first
                                             table_data = None
@@ -2261,6 +2305,12 @@ def data_load_tab():
                                                 # Clear the renaming state
                                                 if f"renaming_{table_name}" in st.session_state:
                                                     del st.session_state[f"renaming_{table_name}"]
+                                                
+                                                # Also clear any file uploader state that might be tied to this table
+                                                # This ensures the file uploader doesn't interfere with table operations
+                                                if 'main_upload' in st.session_state and not st.session_state.loaded_tables:
+                                                    # Only clear if no other tables exist
+                                                    pass  # Keep the file uploader state
                                                 
                                                 st.success(f"✅ Table renamed from '{table_name}' to '{new_name}'")
                                                 st.rerun()
