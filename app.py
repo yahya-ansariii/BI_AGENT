@@ -1,5 +1,5 @@
 """
-Business Insights Agent - Modern Streamlit Application
+Pathfinder - Modern Streamlit Application
 A local AI-powered business intelligence tool with advanced data analysis capabilities
 """
 
@@ -61,7 +61,7 @@ except ImportError:
 
 # Page configuration
 st.set_page_config(
-        page_title="BI Agent",
+        page_title="Pathfinder",
     page_icon="📊",
     layout="wide",
         initial_sidebar_state="collapsed"
@@ -627,7 +627,90 @@ def create_table_on_enter():
     """Handle Enter key press to create table when all columns are filled"""
     # This function will be called when the last column name is entered
     st.session_state.auto_create_table = True
-    st.rerun()
+
+def parse_markdown_to_reportlab(text: str) -> str:
+    """
+    Parse markdown text and convert to ReportLab XML formatting
+    
+    Args:
+        text: Markdown text string
+        
+    Returns:
+        ReportLab XML formatted string
+    """
+    if not text:
+        return ""
+    
+    # First, convert markdown formatting before escaping
+    # Convert **bold** to <b>bold</b> (ReportLab supports these tags)
+    text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', text)
+    
+    # Convert *italic* to <i>italic</i> (ReportLab supports these tags)
+    text = re.sub(r'\*(.*?)\*', r'<i>\1</i>', text)
+    
+    # Convert `code` to <font name="Courier">code</font> (ReportLab supports font tags)
+    text = re.sub(r'`(.*?)`', r'<font name="Courier">\1</font>', text)
+    
+    # Convert bullet points to proper formatting
+    text = re.sub(r'^[\s]*[•\-]\s*', '• ', text, flags=re.MULTILINE)
+    
+    # Convert numbered lists
+    text = re.sub(r'^[\s]*(\d+)\.\s*', r'\1. ', text, flags=re.MULTILINE)
+    
+    # Now escape special XML characters, but be more careful with dollar signs
+    # Only escape standalone dollar signs, not those in mathematical expressions
+    # Escape ampersands first to avoid double-escaping
+    text = text.replace('&', '&amp;')
+    
+    # Escape dollar signs more carefully - only if they're not part of LaTeX math
+    # This regex looks for dollar signs that are not part of $$...$$ or $...$ patterns
+    text = re.sub(r'(?<!\$)\$(?!\$)', '&#36;', text)
+    
+    # Escape other special XML characters, but preserve our formatting tags
+    # We need to be careful not to escape the <b>, </b>, <i>, </i>, <font>, </font> tags
+    # First, temporarily replace our formatting tags
+    text = text.replace('<b>', '___BOLD_START___')
+    text = text.replace('</b>', '___BOLD_END___')
+    text = text.replace('<i>', '___ITALIC_START___')
+    text = text.replace('</i>', '___ITALIC_END___')
+    text = text.replace('<font name="Courier">', '___FONT_START___')
+    text = text.replace('</font>', '___FONT_END___')
+    
+    # Now escape other < and > characters
+    text = text.replace('<', '&lt;')
+    text = text.replace('>', '&gt;')
+    
+    # Restore our formatting tags
+    text = text.replace('___BOLD_START___', '<b>')
+    text = text.replace('___BOLD_END___', '</b>')
+    text = text.replace('___ITALIC_START___', '<i>')
+    text = text.replace('___ITALIC_END___', '</i>')
+    text = text.replace('___FONT_START___', '<font name="Courier">')
+    text = text.replace('___FONT_END___', '</font>')
+    
+    # Convert line breaks to proper spacing
+    text = text.replace('\n', '<br/>')
+    
+    return text
+
+def escape_markdown_for_streamlit(text: str) -> str:
+    """
+    Escape markdown text for proper display in Streamlit
+    
+    Args:
+        text: Markdown text string
+        
+    Returns:
+        Streamlit-safe markdown string
+    """
+    if not text:
+        return ""
+    
+    # Escape dollar signs to prevent Streamlit from interpreting them as LaTeX math
+    # Use backslash to escape dollar signs in markdown
+    text = text.replace('$', '\\$')
+    
+    return text
 
 def generate_pdf_report(insight_data: Dict, filename: str) -> bytes:
     """Generate PDF report using ReportLab"""
@@ -754,7 +837,8 @@ def generate_pdf_report(insight_data: Dict, filename: str) -> bytes:
     # Question section with icon
     story.append(Paragraph("📝 Analysis Question", heading_style))
     story.append(Spacer(1, 10))
-    story.append(Paragraph(f'<i>"{insight_data["question"]}"</i>', normal_style))
+    question_text = parse_markdown_to_reportlab(insight_data["question"])
+    story.append(Paragraph(f'<i>"{question_text}"</i>', normal_style))
     story.append(Spacer(1, 20))
     
     # SQL Query section
@@ -773,18 +857,22 @@ def generate_pdf_report(insight_data: Dict, filename: str) -> bytes:
         if para.strip():
             # Check if it's a heading (starts with **)
             if para.strip().startswith('**') and para.strip().endswith('**'):
-                # It's a heading
+                # It's a heading - clean it and apply heading style
                 clean_heading = para.strip().replace('**', '').replace('*', '')
                 story.append(Paragraph(clean_heading, subheading_style))
             elif para.strip().startswith('•') or para.strip().startswith('-'):
-                # It's a bullet point
-                story.append(Paragraph(f"• {para.strip().lstrip('•- ')}", normal_style))
+                # It's a bullet point - parse markdown formatting
+                bullet_text = para.strip().lstrip('•- ')
+                formatted_text = parse_markdown_to_reportlab(bullet_text)
+                story.append(Paragraph(f"• {formatted_text}", normal_style))
             elif para.strip().startswith(tuple('123456789')):
-                # It's a numbered list
-                story.append(Paragraph(para.strip(), normal_style))
+                # It's a numbered list - parse markdown formatting
+                formatted_text = parse_markdown_to_reportlab(para.strip())
+                story.append(Paragraph(formatted_text, normal_style))
             else:
-                # Regular paragraph
-                story.append(Paragraph(para.strip(), normal_style))
+                # Regular paragraph - parse markdown formatting
+                formatted_text = parse_markdown_to_reportlab(para.strip())
+                story.append(Paragraph(formatted_text, normal_style))
             story.append(Spacer(1, 8))
     
     # Build PDF
@@ -965,18 +1053,22 @@ def generate_bulk_pdf_report(insights_history: List[Dict]) -> bytes:
             if para.strip():
                 # Check if it's a heading (starts with **)
                 if para.strip().startswith('**') and para.strip().endswith('**'):
-                    # It's a heading
+                    # It's a heading - clean it and apply heading style
                     clean_heading = para.strip().replace('**', '').replace('*', '')
                     story.append(Paragraph(clean_heading, subheading_style))
                 elif para.strip().startswith('•') or para.strip().startswith('-'):
-                    # It's a bullet point
-                    story.append(Paragraph(f"• {para.strip().lstrip('•- ')}", normal_style))
+                    # It's a bullet point - parse markdown formatting
+                    bullet_text = para.strip().lstrip('•- ')
+                    formatted_text = parse_markdown_to_reportlab(bullet_text)
+                    story.append(Paragraph(f"• {formatted_text}", normal_style))
                 elif para.strip().startswith(tuple('123456789')):
-                    # It's a numbered list
-                    story.append(Paragraph(para.strip(), normal_style))
+                    # It's a numbered list - parse markdown formatting
+                    formatted_text = parse_markdown_to_reportlab(para.strip())
+                    story.append(Paragraph(formatted_text, normal_style))
                 else:
-                    # Regular paragraph
-                    story.append(Paragraph(para.strip(), normal_style))
+                    # Regular paragraph - parse markdown formatting
+                    formatted_text = parse_markdown_to_reportlab(para.strip())
+                    story.append(Paragraph(formatted_text, normal_style))
                 story.append(Spacer(1, 6))
         
         # Add page break between insights (except for the last one)
@@ -1060,8 +1152,8 @@ def handle_tab_navigation():
         elif tab_name == "queries":
             st.markdown("""
             <div style="background-color: #f3e5f5; border: 2px solid #9c27b0; border-radius: 10px; padding: 15px; margin: 10px 0;">
-                <h3 style="color: #7b1fa2; margin: 0;">💻 Navigate to Custom Queries!</h3>
-                <p style="margin: 5px 0 0 0; color: #424242;">Click on the <strong>'💻 Custom Queries'</strong> tab above to create custom queries</p>
+                <h3 style="color: #7b1fa2; margin: 0;">💻 Navigate to SQL Playground!</h3>
+                <p style="margin: 5px 0 0 0; color: #424242;">Click on the <strong>'💻 SQL Playground'</strong> tab above to create custom queries</p>
             </div>
             """, unsafe_allow_html=True)
         elif tab_name == "ai":
@@ -1113,8 +1205,24 @@ def initialize_session_state():
         st.session_state.current_user_query = ""
     if 'current_sql_query' not in st.session_state:
         st.session_state.current_sql_query = ""
+    if 'ai_analysis_sql_query' not in st.session_state:
+        st.session_state.ai_analysis_sql_query = ""
+    if 'custom_sql_query' not in st.session_state:
+        st.session_state.custom_sql_query = ""
     if 'current_query_results' not in st.session_state:
         st.session_state.current_query_results = None
+    if 'ai_analysis_query_results' not in st.session_state:
+        st.session_state.ai_analysis_query_results = None
+    if 'sql_playground_query_results' not in st.session_state:
+        st.session_state.sql_playground_query_results = None
+    if 'analysis_query' not in st.session_state:
+        st.session_state.analysis_query = ""
+    if 'generate_question_flag' not in st.session_state:
+        st.session_state.generate_question_flag = False
+    if 'generated_question' not in st.session_state:
+        st.session_state.generated_question = ""
+    if 'question_to_display' not in st.session_state:
+        st.session_state.question_to_display = ""
     if 'current_visualization' not in st.session_state:
         st.session_state.current_visualization = None
     if 'current_ai_analysis' not in st.session_state:
@@ -1302,7 +1410,7 @@ def main():
     # Header with visible logo
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        st.markdown('<div style="text-align: center;"><span class="logo-emoji">📊</span><h1 class="main-header">BI Agent</h1></div>', unsafe_allow_html=True)
+        st.markdown('<div style="text-align: center;"><span class="logo-emoji">📊</span><h1 class="main-header">Pathfinder</h1></div>', unsafe_allow_html=True)
         st.markdown('<p class="sub-header">AI-Powered Data Analysis</p>', unsafe_allow_html=True)
     
     # Handle tab navigation - show notifications after header
@@ -1313,7 +1421,7 @@ def main():
         "📁 Data Load", 
         "🔍 Explorer", 
         "🔗 Relationships", 
-        "💻 Custom Queries",
+        "💻 SQL Playground",
         "🤖 AI Analysis", 
         "⚙️ Settings"
     ])
@@ -1913,6 +2021,22 @@ def data_load_tab():
             except Exception as e:
                 st.error(f"❌ Error loading data: {str(e)}")
     
+    # Add Clear All Data button
+    if st.session_state.loaded_tables or st.session_state.data_processor.has_data():
+        st.markdown("---")
+        col1, col2, col3 = st.columns([1, 1, 1])
+        with col2:
+            if st.button("🗑️ Clear All Data", key="clear_all_data", type="secondary"):
+                # Clear all loaded tables
+                st.session_state.loaded_tables = {}
+                # Clear data processor
+                st.session_state.data_processor.clear_data()
+                # Clear file uploader by resetting the session state
+                if 'main_upload' in st.session_state:
+                    del st.session_state['main_upload']
+                st.success("✅ All data cleared successfully!")
+                st.rerun()
+    
     with col2:
         st.subheader("📊 Sample Data")
         st.markdown("Try the application with sample business data")
@@ -2070,10 +2194,33 @@ def data_load_tab():
                     
                     with col5:
                         if st.button(f"🗑️ Delete", key=f"delete_{table_name}"):
+                            # Delete from loaded_tables if it exists there
                             if table_name in st.session_state.loaded_tables:
                                 del st.session_state.loaded_tables[table_name]
+                                st.success(f"✅ Table '{table_name}' deleted successfully!")
+                                
+                                # If this was the last table from an uploaded file, clear the file uploader
+                                if not st.session_state.loaded_tables and 'main_upload' in st.session_state:
+                                    del st.session_state['main_upload']
+                                    
+                            # Also clear from data_processor if it's the main table
                             elif table_name == 'main':
                                 st.session_state.data_processor.clear_data()
+                                st.success(f"✅ Main table cleared successfully!")
+                                
+                                # Clear file uploader if it exists
+                                if 'main_upload' in st.session_state:
+                                    del st.session_state['main_upload']
+                                    
+                            # Handle any other cases
+                            else:
+                                # Try to clear from data_processor as well
+                                st.session_state.data_processor.clear_data()
+                                st.success(f"✅ Table '{table_name}' deleted successfully!")
+                                
+                                # Clear file uploader if it exists
+                                if 'main_upload' in st.session_state:
+                                    del st.session_state['main_upload']
                             st.rerun()
                     
                     # Rename functionality
@@ -2341,7 +2488,7 @@ def relationship_builder_tab():
     if st.session_state.loaded_tables:
         all_tables.update(st.session_state.loaded_tables)
     if st.session_state.data_processor.has_data():
-        all_tables.update(st.session_state.data_processor.get_all_data())
+        all_tables.update(st.session_state.data_processor.get_loaded_tables())
     
     if not all_tables:
         st.markdown('<div class="status-warning">⚠️ No tables available for relationship building.</div>', unsafe_allow_html=True)
@@ -2734,12 +2881,48 @@ def ai_analysis_tab():
     col1, col2 = st.columns([4, 1])
     
     with col1:
+        # Determine what value to show in the text area
+        display_value = st.session_state.question_to_display if st.session_state.question_to_display else st.session_state.analysis_query
+        
         user_query = st.text_area(
             "Enter your analysis question:",
+            value=display_value,
             placeholder="e.g., What are the top 5 products by sales? Show me customer trends over time.",
             height=100,
             key="analysis_query"
         )
+    
+    # Handle question generation flag
+    if st.session_state.generate_question_flag:
+        with st.spinner("AI is analyzing your data and generating an interesting question..."):
+            try:
+                if st.session_state.loaded_tables:
+                    current_table = st.session_state.current_table if hasattr(st.session_state, 'current_table') else list(st.session_state.loaded_tables.keys())[0]
+                    current_data = st.session_state.loaded_tables[current_table]
+                else:
+                    current_data = st.session_state.data_processor.get_data()
+                
+                # Generate an interesting analysis question
+                generated_question = st.session_state.llm_agent.generate_analysis_question(current_data)
+                
+                # Store the generated question in separate variables (don't modify analysis_query)
+                st.session_state.generated_question = generated_question
+                st.session_state.question_to_display = generated_question
+                
+                # Reset the flag
+                st.session_state.generate_question_flag = False
+                
+                # Show success message and rerun to update the display
+                st.success("✅ Generated an interesting analysis question! Click 'Generate SQL' to create the query.")
+                st.rerun()
+                
+            except Exception as e:
+                st.error(f"❌ Error: {str(e)}")
+                st.session_state.generate_question_flag = False
+    
+    # Clear display variable if user has manually edited the text area
+    if user_query != st.session_state.question_to_display and st.session_state.question_to_display:
+        st.session_state.question_to_display = ""
     
     with col2:
         if st.button("🔍 Generate SQL", type="primary", key="generate_sql_btn"):
@@ -2760,7 +2943,7 @@ def ai_analysis_tab():
                         sql_query = st.session_state.llm_agent.generate_sql_query_with_tables(user_query, all_tables, relationships)
                         
                         # Store SQL query
-                        st.session_state.current_sql_query = sql_query
+                        st.session_state.ai_analysis_sql_query = sql_query
                         st.session_state.current_user_query = user_query
                         
                         st.success("✅ SQL query generated!")
@@ -2769,36 +2952,27 @@ def ai_analysis_tab():
                         st.error(f"❌ Error generating SQL: {str(e)}")
         
         with col2:
-            if st.button("🎯 Quick SQL Examples", key="quick_sql_btn"):
-                with st.spinner("Generating quick SQL examples..."):
-                    try:
-                        if st.session_state.loaded_tables:
-                            current_table = st.session_state.current_table if hasattr(st.session_state, 'current_table') else list(st.session_state.loaded_tables.keys())[0]
-                            current_data = st.session_state.loaded_tables[current_table]
-                        else:
-                            current_data = st.session_state.data_processor.get_data()
-                        
-                        quick_sql = st.session_state.llm_agent.get_quick_sql_insights(current_data)
-                        st.session_state.quick_sql_examples = quick_sql
-                        
-                    except Exception as e:
-                        st.error(f"❌ Error: {str(e)}")
+            if st.button("🎯 Generate Question", key="quick_sql_btn"):
+                # Set flag to generate question in next execution
+                st.session_state.generate_question_flag = True
+                st.rerun()
     
     # Display generated SQL query (persistent and editable)
-    if hasattr(st.session_state, 'current_sql_query') and st.session_state.current_sql_query:
+    if hasattr(st.session_state, 'ai_analysis_sql_query') and st.session_state.ai_analysis_sql_query:
         st.markdown("### 📝 SQL Query:")
         
         # Editable SQL query
         edited_sql = st.text_area(
             "Edit SQL Query:",
-            value=st.session_state.current_sql_query,
+            value=st.session_state.ai_analysis_sql_query,
             height=150,
-            help="You can edit the generated SQL query or write your own custom query"
+            help="You can edit the generated SQL query or write your own custom query",
+            key="ai_analysis_sql_editor"
         )
         
         # Update the stored SQL query if edited
-        if edited_sql != st.session_state.current_sql_query:
-            st.session_state.current_sql_query = edited_sql
+        if edited_sql != st.session_state.ai_analysis_sql_query:
+            st.session_state.ai_analysis_sql_query = edited_sql
         
         # AI Workflow: Step 3 - Execute Query
         st.subheader("📊 Step 3: Execute Query")
@@ -2824,22 +2998,13 @@ def ai_analysis_tab():
                                 conn.register(table_name, df)
                             
                             # Execute query
-                            result_df = conn.execute(st.session_state.current_sql_query).fetchdf()
+                            result_df = conn.execute(st.session_state.ai_analysis_sql_query).fetchdf()
                             
                             if not result_df.empty:
                                 st.success("✅ Query executed successfully!")
                                 
                                 # Store results
-                                st.session_state.current_query_results = result_df
-                                
-                                # Display results summary
-                                st.markdown("### 📋 Query Results Summary:")
-                                st.markdown(f"**Rows returned:** {len(result_df)}")
-                                st.markdown(f"**Columns:** {', '.join(result_df.columns)}")
-                                
-                                # Display results
-                                st.markdown("### 📊 Data Preview:")
-                                safe_dataframe_display(result_df, width='stretch')
+                                st.session_state.ai_analysis_query_results = result_df
                                 
                             else:
                                 st.warning("⚠️ Query returned no results.")
@@ -2853,15 +3018,15 @@ def ai_analysis_tab():
         
         with col2:
             if st.button("🔄 Re-generate SQL", key="regenerate_sql_btn"):
-                st.session_state.current_sql_query = None
+                st.session_state.ai_analysis_sql_query = None
                 st.rerun()
     
     # Display persistent query results if available
-    if hasattr(st.session_state, 'current_query_results') and st.session_state.current_query_results is not None:
+    if hasattr(st.session_state, 'ai_analysis_query_results') and st.session_state.ai_analysis_query_results is not None:
         st.markdown("---")
         st.subheader("📊 Query Results")
         
-        result_df = st.session_state.current_query_results
+        result_df = st.session_state.ai_analysis_query_results
         
         # Display results summary
         st.markdown("### 📋 Results Summary:")
@@ -2877,16 +3042,12 @@ def ai_analysis_tab():
         st.markdown("### 📊 Data Preview:")
         safe_dataframe_display(result_df, width='stretch')
     
-    # Display Quick SQL Examples
-    if hasattr(st.session_state, 'quick_sql_examples') and st.session_state.quick_sql_examples:
-        st.markdown("### 🎯 Quick SQL Examples:")
-        st.text_area("SQL Examples", value=st.session_state.quick_sql_examples, height=200, disabled=True)
     
     
     # AI Workflow: Step 4 - Visualization (Separate Button)
-    if (hasattr(st.session_state, 'current_query_results') and 
-        st.session_state.current_query_results is not None and 
-        not st.session_state.current_query_results.empty):
+    if (hasattr(st.session_state, 'ai_analysis_query_results') and 
+        st.session_state.ai_analysis_query_results is not None and 
+        not st.session_state.ai_analysis_query_results.empty):
         st.subheader("📈 Step 4: Create Visualization")
         
         col1, col2 = st.columns([2, 1])
@@ -2898,7 +3059,7 @@ def ai_analysis_tab():
                         # Create visualization
                         user_query = st.session_state.get('current_user_query', 'Custom Query Results')
                         viz_fig = st.session_state.visualizer.create_auto_visualization(
-                            st.session_state.current_query_results, 
+                            st.session_state.ai_analysis_query_results, 
                             user_query
                         )
                         if viz_fig:
@@ -2924,7 +3085,7 @@ def ai_analysis_tab():
                         user_query = st.session_state.get('current_user_query', 'Custom Query Analysis')
                         analysis = st.session_state.llm_agent.analyze_query_results(
                             user_query,
-                            st.session_state.current_query_results,
+                            st.session_state.ai_analysis_query_results,
                             source_tables
                         )
                         
@@ -2945,7 +3106,8 @@ def ai_analysis_tab():
     # Display AI Analysis
     if hasattr(st.session_state, 'current_ai_analysis') and st.session_state.current_ai_analysis:
         st.markdown("### 🧠 AI Analysis:")
-        st.markdown(st.session_state.current_ai_analysis)
+        escaped_analysis = escape_markdown_for_streamlit(st.session_state.current_ai_analysis)
+        st.markdown(escaped_analysis)
         
         # Store in insights history
         if 'insights_history' not in st.session_state:
@@ -2953,10 +3115,10 @@ def ai_analysis_tab():
         
         insight_entry = {
             'question': st.session_state.get('current_user_query', 'Custom Query Analysis'),
-            'sql_query': st.session_state.get('current_sql_query', ''),
+            'sql_query': st.session_state.get('ai_analysis_sql_query', ''),
             'analysis': st.session_state.current_ai_analysis,
             'timestamp': st.session_state.analysis_timestamp,
-            'data_shape': st.session_state.current_query_results.shape if st.session_state.current_query_results is not None else (0, 0)
+            'data_shape': st.session_state.ai_analysis_query_results.shape if st.session_state.ai_analysis_query_results is not None else (0, 0)
         }
         
         # Add to history if not already there
@@ -3019,7 +3181,8 @@ def ai_analysis_tab():
                 st.markdown(f"**SQL Query:**")
                 st.code(entry['sql_query'], language="sql")
                 st.markdown(f"**AI Analysis:**")
-                st.markdown(entry['analysis'])
+                escaped_analysis = escape_markdown_for_streamlit(entry['analysis'])
+                st.markdown(escaped_analysis)
                 st.markdown(f"**Data Shape:** {entry['data_shape']}")
                 
                 # Export button for this specific insight
@@ -3042,7 +3205,7 @@ def ai_analysis_tab():
 
 def custom_queries_tab():
     """Enhanced Custom Queries tab with AI generation and visualization"""
-    st.header("💻 Custom Queries & AI Analysis")
+    st.header("💻 SQL Playground")
     
     if not st.session_state.loaded_tables and not st.session_state.data_processor.has_data():
         st.markdown('<div class="status-warning">⚠️ No data loaded. Please load data first.</div>', unsafe_allow_html=True)
@@ -3093,7 +3256,7 @@ def custom_queries_tab():
     st.subheader("✏️ SQL Query Editor")
     
     # SQL Query Editor
-    current_query = st.session_state.get('current_sql_query', '')
+    current_query = st.session_state.get('custom_sql_query', '')
     if not current_query:
         # Pre-populate with a sample query
         sample_query = f"""-- Example queries for your data:
@@ -3109,11 +3272,11 @@ def custom_queries_tab():
         height=200,
         placeholder="SELECT * FROM table_name LIMIT 10;",
         help="Write your own SQL query using the available tables",
-        key="sql_editor"
+        key="custom_sql_editor"
     )
     
     # Update current query in session state
-    st.session_state.current_sql_query = custom_sql
+    st.session_state.custom_sql_query = custom_sql
     
     # Quick query templates
     st.markdown("**📝 Quick Templates**")
@@ -3122,13 +3285,13 @@ def custom_queries_tab():
     with col1:
         if st.button("🔍 Explore Data", key="explore_template_btn"):
             template = f"SELECT * FROM {list(all_tables.keys())[0]} LIMIT 10;"
-            st.session_state.current_sql_query = template
+            st.session_state.custom_sql_query = template
             st.rerun()
     
     with col2:
         if st.button("📊 Count Records", key="count_template_btn"):
             template = f"SELECT COUNT(*) as total_records FROM {list(all_tables.keys())[0]};"
-            st.session_state.current_sql_query = template
+            st.session_state.custom_sql_query = template
             st.rerun()
     
     with col3:
@@ -3147,7 +3310,7 @@ def custom_queries_tab():
                 # No numeric columns, just use COUNT
                 template = f"SELECT COUNT(*) as count, COUNT(DISTINCT {first_df.columns[0]}) as unique_values FROM {first_table};"
             
-            st.session_state.current_sql_query = template
+            st.session_state.custom_sql_query = template
             st.rerun()
     
     with col4:
@@ -3167,7 +3330,7 @@ def custom_queries_tab():
                 # No common columns, create a simple cross join
                 template = f"SELECT * FROM {table1} t1 CROSS JOIN {table2} t2 LIMIT 10;"
             
-            st.session_state.current_sql_query = template
+            st.session_state.custom_sql_query = template
             st.rerun()
     
     # Query execution controls
@@ -3197,7 +3360,7 @@ def custom_queries_tab():
                                 'rows_returned': len(result_df)
                             }
                             st.session_state.query_history.append(query_entry)
-                            st.session_state.current_query_results = result_df
+                            st.session_state.sql_playground_query_results = result_df
                             st.rerun()
                             
                         else:
@@ -3213,8 +3376,8 @@ def custom_queries_tab():
     
     with col_exec2:
         if st.button("🧹 Clear Query", key="clear_query_btn"):
-            st.session_state.current_sql_query = ""
-            st.session_state.current_query_results = None
+            st.session_state.custom_sql_query = ""
+            st.session_state.sql_playground_query_results = None
             st.rerun()
     
     with col_exec3:
@@ -3222,11 +3385,11 @@ def custom_queries_tab():
             st.code(custom_sql, language="sql")
     
     # Results and Visualization Section
-    if 'current_query_results' in st.session_state and st.session_state.current_query_results is not None:
+    if 'sql_playground_query_results' in st.session_state and st.session_state.sql_playground_query_results is not None:
         st.markdown("---")
         st.subheader("📊 Query Results")
         
-        result_df = st.session_state.current_query_results
+        result_df = st.session_state.sql_playground_query_results
         
         # Results summary
         col1, col2, col3 = st.columns(3)
@@ -3341,12 +3504,12 @@ def custom_queries_tab():
                 col_hist1, col_hist2 = st.columns([1, 1])
                 with col_hist1:
                     if st.button(f"🔄 Re-run Query {len(st.session_state.query_history) - i}", key=f"rerun_query_{i}"):
-                        st.session_state.current_sql_query = query_entry['query']
+                        st.session_state.custom_sql_query = query_entry['query']
                         st.rerun()
                 
                 with col_hist2:
                     if st.button(f"📊 Show Results {len(st.session_state.query_history) - i}", key=f"show_results_{i}"):
-                        st.session_state.current_query_results = query_entry['results']
+                        st.session_state.sql_playground_query_results = query_entry['results']
                         st.rerun()
         
         if st.button("🗑️ Clear History", key="clear_history_btn"):
@@ -3393,7 +3556,8 @@ def insights_tab():
             st.markdown(f"- **Generated:** {entry['timestamp']}")
             
             st.markdown(f"### 🧠 **AI Analysis**")
-            st.markdown(entry['analysis'])
+            escaped_analysis = escape_markdown_for_streamlit(entry['analysis'])
+            st.markdown(escaped_analysis)
             
             # Export buttons for this specific insight
             col1, col2, col3 = st.columns(3)

@@ -226,6 +226,12 @@ Format your response as a structured analysis with clear sections.
     def _call_ollama_api(self, prompt: str) -> str:
         """Call Ollama API directly with improved error handling"""
         try:
+            # Log API request details
+            print(f"\n🌐 CALLING OLLAMA API:")
+            print(f"   URL: {self.ollama_base_url}/api/generate")
+            print(f"   Model: {self.model_name}")
+            print(f"   Prompt length: {len(prompt)} characters")
+            
             response = requests.post(
                 f"{self.ollama_base_url}/api/generate",
                 json={
@@ -241,11 +247,17 @@ Format your response as a structured analysis with clear sections.
                 timeout=120  # Increased timeout
             )
             
+            print(f"   Response status: {response.status_code}")
+            
             if response.status_code == 200:
                 result = response.json()
-                return result.get('response', 'No response generated')
+                response_text = result.get('response', 'No response generated')
+                print(f"   Response length: {len(response_text)} characters")
+                return response_text
             else:
-                return f"API Error: {response.status_code} - {response.text}"
+                error_msg = f"API Error: {response.status_code} - {response.text}"
+                print(f"   ❌ {error_msg}")
+                return error_msg
                 
         except requests.exceptions.Timeout:
             return "AI analysis timed out. Please try with a simpler query or check if Ollama is running properly."
@@ -352,21 +364,44 @@ Provide specific recommendations for customer engagement and retention.
             Generate a SQL query that:
             1. Answers the question accurately and directly
             2. Uses proper SQL syntax for DuckDB
-            3. Handles data types correctly
+            3. Handles data types correctly based on the column types shown
             4. ONLY includes WHERE clauses if explicitly mentioned in the question
             5. ONLY includes date filters if the question specifically asks for a date range
-            6. ONLY includes payment method or other filters if explicitly mentioned
+            6. ONLY includes other filters if explicitly mentioned in the question
             7. Uses appropriate GROUP BY, ORDER BY, and LIMIT clauses as needed
             8. Focuses on the core question without adding unnecessary filtering
+            9. Uses the actual column names and table name provided
+            10. Uses ONLY the necessary columns and tables for the question
             
-            IMPORTANT: Do not add filters that are not explicitly mentioned in the question.
-            If the question asks for "total sales by region", do NOT add payment method or date filters.
+            IMPORTANT: 
+            - Do not add filters that are not explicitly mentioned in the question
+            - Focus on answering exactly what is asked without making assumptions
+            - Use only the columns that are directly relevant to answering the question
+            - If the question can be answered with a single table, do not use JOINs
             
             Return ONLY the SQL query, no explanations.
             """
             
+            # Log the prompt being sent to Ollama
+            print("\n" + "="*80)
+            print("🤖 OLLAMA SQL GENERATION REQUEST")
+            print("="*80)
+            print(f"📝 Question: {question}")
+            print(f"📊 Data shape: {data.shape}")
+            print(f"📋 Columns: {', '.join(columns)}")
+            print("\n📤 PROMPT SENT TO OLLAMA:")
+            print("-" * 40)
+            print(prompt)
+            print("-" * 40)
+            
             # Call Ollama API
             response = self._call_ollama_api(prompt)
+            
+            # Log the response from Ollama
+            print("\n📥 RESPONSE FROM OLLAMA:")
+            print("-" * 40)
+            print(response)
+            print("-" * 40)
             
             # Clean up the response to extract just the SQL
             sql_query = response.strip()
@@ -374,6 +409,14 @@ Provide specific recommendations for customer engagement and retention.
                 sql_query = sql_query.split('```sql')[1].split('```')[0].strip()
             elif '```' in sql_query:
                 sql_query = sql_query.split('```')[1].split('```')[0].strip()
+            
+            print(f"\n🔧 EXTRACTED SQL QUERY:")
+            print("-" * 40)
+            print(sql_query)
+            print("-" * 40)
+            print("="*80)
+            print("✅ SQL GENERATION COMPLETE")
+            print("="*80 + "\n")
             
             return sql_query
             
@@ -439,11 +482,17 @@ Provide specific recommendations for customer engagement and retention.
             3. Generate a SQL query that answers the question accurately
             4. Use proper SQL syntax for DuckDB
             5. Handle data types correctly based on the column types shown
-            6. Use JOINs if the question requires data from multiple tables
-            7. Use the provided relationships to create proper JOINs between tables
+            6. INTELLIGENT TABLE SELECTION:
+               - If the question can be answered using data from ONE table, use only that table
+               - If the question explicitly requires data from multiple tables, use JOINs
+               - If the question mentions relationships between different entities, use JOINs
+               - If the question asks about "which table has the most/least X", use only that table
+               - If the question asks about "compare X across different Y", use JOINs if Y is in different tables
+            7. Use the provided relationships to create proper JOINs between tables when needed
             8. Use appropriate WHERE, GROUP BY, ORDER BY, and LIMIT clauses
             9. ONLY add filters that are explicitly mentioned in the question
             10. Focus on the core question without unnecessary filtering
+            11. Use only the columns and tables that are directly relevant to answering the question
             
             CRITICAL DATA TYPE RULES:
             - AVG(), SUM(), MIN(), MAX() only work on NUMERIC columns (int, float, decimal)
@@ -456,18 +505,50 @@ Provide specific recommendations for customer engagement and retention.
             - If a column is marked as 'is_numeric': true, you can use AVG(), SUM(), MIN(), MAX()
             
             Examples of good table usage:
-            - If asking about "sales by product", use the actual table name like "sales" or "products"
-            - If asking about "customer data", use the actual table name like "customers" or "customer_info"
-            - Use actual column names like "product_name", "sales_amount", "customer_id", etc.
-            - Use relationships to JOIN tables: table1.column = table2.column
-            - For basic stats on VARCHAR columns: SELECT COUNT(*) as count, COUNT(DISTINCT column_name) as unique_count
+            - Use the ACTUAL table names provided in the table information (not generic names)
+            - Use the ACTUAL column names from the tables as shown in the column lists
+            
+            SINGLE TABLE EXAMPLES (use when question can be answered with one table):
+            - "What are the most common values in [text_column]?" → SELECT column_name, COUNT(*) FROM table_name GROUP BY column_name
+            - "What is the average [numeric_column]?" → SELECT AVG(column_name) FROM table_name
+            - "How many records are in [table_name]?" → SELECT COUNT(*) FROM table_name
+            - "What are the top 5 [category] by [numeric_column]?" → SELECT category, numeric_column FROM table_name ORDER BY numeric_column DESC LIMIT 5
+            
+            MULTI-TABLE EXAMPLES (use JOINs when question requires multiple tables):
+            - "Compare [metric] across different [categories] from different tables" → Use JOINs
+            - "Show [table1.field] and [table2.field] together" → Use JOINs
+            - "Which [entity1] has the highest [metric] from [entity2]?" → Use JOINs if entities are in different tables
+            
+            GENERAL PATTERNS:
+            - For counting unique values in TEXT columns: SELECT COUNT(DISTINCT column_name) as unique_count
             - For basic stats on NUMERIC columns: SELECT COUNT(*) as count, AVG(column_name) as avg_value, MIN(column_name) as min_value, MAX(column_name) as max_value
+            - For text analysis: SELECT column_name, COUNT(*) as frequency FROM table GROUP BY column_name ORDER BY frequency DESC
+            - For date/time analysis: Use appropriate date functions like DATE(), YEAR(), MONTH() based on the column type
+            - Use relationships to JOIN tables when needed: table1.column = table2.column
             
             Return ONLY the SQL query, no explanations.
             """
             
+            # Log the multi-table prompt being sent to Ollama
+            print("\n" + "="*80)
+            print("🤖 OLLAMA MULTI-TABLE SQL GENERATION REQUEST")
+            print("="*80)
+            print(f"📝 Question: {question}")
+            print(f"📊 Available tables: {list(tables.keys())}")
+            print(f"🔗 Relationships: {len(relationships) if relationships else 0}")
+            print("\n📤 PROMPT SENT TO OLLAMA:")
+            print("-" * 40)
+            print(prompt)
+            print("-" * 40)
+            
             # Call Ollama API
             response = self._call_ollama_api(prompt)
+            
+            # Log the response from Ollama
+            print("\n📥 RESPONSE FROM OLLAMA:")
+            print("-" * 40)
+            print(response)
+            print("-" * 40)
             
             # Clean up the response to extract just the SQL
             sql_query = response.strip()
@@ -475,6 +556,14 @@ Provide specific recommendations for customer engagement and retention.
                 sql_query = sql_query.split('```sql')[1].split('```')[0].strip()
             elif '```' in sql_query:
                 sql_query = sql_query.split('```')[1].split('```')[0].strip()
+            
+            print(f"\n🔧 EXTRACTED SQL QUERY:")
+            print("-" * 40)
+            print(sql_query)
+            print("-" * 40)
+            print("="*80)
+            print("✅ MULTI-TABLE SQL GENERATION COMPLETE")
+            print("="*80 + "\n")
             
             return sql_query
             
@@ -507,6 +596,87 @@ Provide specific recommendations for customer engagement and retention.
             
         except Exception as e:
             return f"-- Error generating SQL insights: {str(e)}"
+    
+    def generate_analysis_question(self, data: pd.DataFrame) -> str:
+        """Generate a user-friendly analysis question based on the data schema"""
+        try:
+            columns = list(data.columns)
+            dtypes = {col: str(dtype) for col, dtype in data.dtypes.items()}
+            
+            # Categorize columns by type
+            numeric_cols = data.select_dtypes(include=['number']).columns.tolist()
+            text_cols = data.select_dtypes(include=['object', 'string']).columns.tolist()
+            datetime_cols = data.select_dtypes(include=['datetime64']).columns.tolist()
+            
+            prompt = f"""
+            You are a data analysis expert. Generate ONE simple, user-friendly analysis question based on this dataset.
+            
+            Dataset info:
+            - Columns: {', '.join(columns)}
+            - Column types: {dtypes}
+            - Numeric columns: {numeric_cols}
+            - Text columns: {text_cols}
+            - Date columns: {datetime_cols}
+            - Sample data: {self._serialize_dataframe_for_json(data.head(3))}
+            
+            Generate a single, simple analysis question that:
+            1. Is written in natural, conversational language
+            2. Focuses on ONE table only (no JOINs or complex relationships)
+            3. Uses basic analysis patterns like counting, grouping, or simple statistics
+            4. Is 1-2 lines long and easy to understand
+            5. Uses the actual column names from the dataset
+            6. Is appropriate for beginners to intermediate users
+            
+            Focus on these simple analysis patterns:
+            - Counting records or unique values
+            - Finding top/bottom items by a numeric column
+            - Basic statistics (average, min, max) for numeric columns
+            - Grouping by categorical columns
+            - Simple filtering or sorting
+            
+            Examples of good SIMPLE questions:
+            - "What are the most common values in [text_column]?"
+            - "Which [category_column] appears most frequently?"
+            - "What is the average [numeric_column] across all records?"
+            - "What are the top 5 [category_column] by [numeric_column]?"
+            - "How many records do we have in total?"
+            - "What is the highest and lowest value in [numeric_column]?"
+            - "How many unique [text_column] values are there?"
+            
+            AVOID complex questions like:
+            - Questions requiring JOINs between multiple tables
+            - Questions about relationships between different datasets
+            - Complex analytical questions requiring advanced SQL
+            
+            Return ONLY the question, no explanations or additional text.
+            """
+            
+            # Log the question generation request
+            print("\n" + "="*80)
+            print("🤖 OLLAMA QUESTION GENERATION REQUEST")
+            print("="*80)
+            print(f"📊 Data shape: {data.shape}")
+            print(f"📋 Columns: {', '.join(columns)}")
+            print("\n📤 PROMPT SENT TO OLLAMA:")
+            print("-" * 40)
+            print(prompt)
+            print("-" * 40)
+            
+            response = self._call_ollama_api(prompt)
+            
+            # Log the response
+            print("\n📥 RESPONSE FROM OLLAMA:")
+            print("-" * 40)
+            print(response)
+            print("-" * 40)
+            print("="*80)
+            print("✅ QUESTION GENERATION COMPLETE")
+            print("="*80 + "\n")
+            
+            return response.strip()
+            
+        except Exception as e:
+            return f"What insights can we discover from this data?"
     
     def detect_relationships(self, tables: Dict[str, pd.DataFrame]) -> List[Dict]:
         """Detect potential relationships between tables using column name matching first, then AI with sample data"""
