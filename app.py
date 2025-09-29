@@ -2946,14 +2946,18 @@ def ai_analysis_tab():
     if st.session_state.generate_question_flag:
         with st.spinner("AI is analyzing your data and generating an interesting question..."):
             try:
+                # Get all available tables (same logic as Generate SQL)
+                all_tables = {}
                 if st.session_state.loaded_tables:
-                    current_table = st.session_state.current_table if hasattr(st.session_state, 'current_table') else list(st.session_state.loaded_tables.keys())[0]
-                    current_data = st.session_state.loaded_tables[current_table]
-                else:
-                    current_data = st.session_state.data_processor.get_data()
+                    all_tables.update(st.session_state.loaded_tables)
+                if st.session_state.data_processor.has_data():
+                    all_tables['main'] = st.session_state.data_processor.get_data()
                 
-                # Generate an interesting analysis question
-                generated_question = st.session_state.llm_agent.generate_analysis_question(current_data)
+                # Get relationships for question generation (same as Generate SQL)
+                relationships = st.session_state.get('relationships', [])
+                
+                # Generate an interesting analysis question with all table information and relationships
+                generated_question = st.session_state.llm_agent.generate_analysis_question_with_tables(all_tables, relationships)
                 
                 # Store the generated question in separate variables (don't modify analysis_query)
                 st.session_state.generated_question = generated_question

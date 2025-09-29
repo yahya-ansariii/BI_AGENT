@@ -678,6 +678,119 @@ Provide specific recommendations for customer engagement and retention.
         except Exception as e:
             return f"What insights can we discover from this data?"
     
+    def generate_analysis_question_with_tables(self, tables: Dict[str, pd.DataFrame], relationships: List[Dict] = None) -> str:
+        """Generate a user-friendly analysis question based on multiple tables and their relationships"""
+        try:
+            # Prepare comprehensive table information (same format as generate_sql_query_with_tables)
+            table_info = {}
+            for table_name, df in tables.items():
+                columns = list(df.columns)
+                dtypes = {col: str(dtype) for col, dtype in df.dtypes.items()}
+                
+                # Categorize columns by type
+                numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
+                text_cols = df.select_dtypes(include=['object', 'string']).columns.tolist()
+                datetime_cols = df.select_dtypes(include=['datetime64']).columns.tolist()
+                
+                table_info[table_name] = {
+                    'columns': columns,
+                    'column_types': dtypes,
+                    'numeric_columns': numeric_cols,
+                    'text_columns': text_cols,
+                    'datetime_columns': datetime_cols,
+                    'row_count': len(df),
+                    'sample_data': self._serialize_dataframe_for_json(df.head(3))
+                }
+            
+            # Prepare relationships information
+            relationships_info = ""
+            if relationships:
+                relationships_info = f"""
+            
+            Table Relationships:
+            {json.dumps(relationships, indent=2)}
+            
+            Consider these relationships when generating questions that might involve multiple tables.
+            """
+            
+            # Create comprehensive question generation prompt
+            prompt = f"""
+            You are a data analysis expert. Generate ONE simple, user-friendly analysis question based on the available datasets.
+            
+            Available Tables:
+            {json.dumps(table_info, indent=2, default=str)}{relationships_info}
+            
+            Generate a single, simple analysis question that:
+            1. Is written in natural, conversational language
+            2. Can be answered using the available data (preferably from ONE table, but can involve multiple tables if relationships exist)
+            3. Uses basic analysis patterns like counting, grouping, or simple statistics
+            4. Is 1-2 lines long and easy to understand
+            5. Uses the actual column names from the datasets
+            6. Is appropriate for beginners to intermediate users
+            7. Focuses on the most interesting or valuable insights from the data
+            
+            Focus on these simple analysis patterns:
+            - Counting records or unique values
+            - Finding top/bottom items by a numeric column
+            - Basic statistics (average, min, max) for numeric columns
+            - Grouping by categorical columns
+            - Simple filtering or sorting
+            - Comparing values across different categories
+            - Time-based analysis if date columns are available
+            
+            Examples of good SIMPLE questions:
+            - "What are the most common values in [text_column]?"
+            - "Which [category_column] appears most frequently?"
+            - "What is the average [numeric_column] across all records?"
+            - "What are the top 5 [category_column] by [numeric_column]?"
+            - "How many records do we have in total?"
+            - "What is the highest and lowest value in [numeric_column]?"
+            - "How many unique [text_column] values are there?"
+            - "What are the trends in [numeric_column] over time?" (if date columns exist)
+            - "Which [category] has the highest [metric]?" (if multiple tables with relationships)
+            
+            AVOID complex questions like:
+            - Questions requiring complex JOINs between many tables
+            - Questions about advanced analytical concepts
+            - Questions that are too specific or narrow
+            
+            PRIORITIZE:
+            - Questions that highlight the most interesting aspects of the data
+            - Questions that would be valuable for business insights
+            - Questions that use the most relevant columns from the largest/most important table
+            
+            Return ONLY the question, no explanations or additional text.
+            """
+            
+            # Log the multi-table question generation request
+            print("\n" + "="*80)
+            print("🤖 OLLAMA MULTI-TABLE QUESTION GENERATION REQUEST")
+            print("="*80)
+            print(f"📊 Tables available: {list(tables.keys())}")
+            for table_name, df in tables.items():
+                print(f"📋 {table_name}: {df.shape[0]} rows × {df.shape[1]} columns")
+            print(f"🔗 Relationships: {len(relationships) if relationships else 0}")
+            print("\n📤 PROMPT SENT TO OLLAMA:")
+            print("-" * 40)
+            print(prompt)
+            print("-" * 40)
+            
+            response = self._call_ollama_api(prompt)
+            
+            # Log the response
+            print("\n📥 RESPONSE FROM OLLAMA:")
+            print("-" * 40)
+            print(response)
+            print("-" * 40)
+            print("="*80)
+            print("✅ MULTI-TABLE QUESTION GENERATION COMPLETE")
+            print("="*80 + "\n")
+            
+            return response.strip()
+            
+        except Exception as e:
+            return f"What insights can we discover from this data?"
+    
     def detect_relationships(self, tables: Dict[str, pd.DataFrame]) -> List[Dict]:
         """Detect potential relationships between tables using column name matching first, then AI with sample data"""
         try:
