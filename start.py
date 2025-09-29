@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Single command startup script for Business Insights Agent
+Single command startup script for Pathfinder
 Handles complete setup including requirements installation, Ollama setup, and application startup
 """
 
@@ -230,7 +230,7 @@ def check_models():
 
 def start_application():
     """Start the main application"""
-    print("\n🌐 Starting Business Insights Agent...")
+    print("\n🌐 Starting Pathfinder...")
     
     try:
         # Set environment variables for Streamlit
@@ -252,7 +252,7 @@ def start_application():
         ])
         
     except KeyboardInterrupt:
-        print("\n👋 Shutting down Business Insights Agent...")
+        print("\n👋 Shutting down Pathfinder...")
     except Exception as e:
         print(f"❌ Error starting application: {str(e)}")
         print("Make sure all dependencies are installed:")
@@ -260,7 +260,7 @@ def start_application():
 
 def main():
     """Main startup function with complete setup"""
-    print("🤖 Business Insights Agent - Complete Setup & Start")
+    print("🤖 Pathfinder - Complete Setup & Start")
     print("=" * 60)
     
     # Step 1: Check Python version
